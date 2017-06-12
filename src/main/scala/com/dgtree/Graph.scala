@@ -1,3 +1,5 @@
+package com.dgtree;
+
 import collection.mutable.Map
 /** A data-graph in the input graph database 
  * 
@@ -81,5 +83,37 @@ class Graph(val id: Int,
         println(gv.source())
         gv.render(engine="neato", format="png", fileName=filename, directory = directory)
     }   
+
+}
+
+object Graph {
+
+    /** A Factory Method to instantiate a Graph from its String Representation */
+    def makeGraph(s: String) = {
+        if (s.length > 0) {
+            // extract graph properties from its string representation
+            val sList = s.split("\n")
+            val id           = sList(0).toInt
+            val vertexCount  = sList(1).toInt
+            val vertexLabels = sList.slice(2, 2+vertexCount)
+            val edgeCount    = sList(2+vertexCount).toInt 
+
+            // initialize a new data-graph with the properties extracted above
+            val g = new Graph(id, vertexCount, edgeCount, vertexLabels)
+
+            // parse the adjacency list from its string representation  
+            val adjacencyList = sList.slice(3+vertexCount, sList.length)
+            val adjacencyMap = adjacencyList.map(_.split(" ").map(_.toInt))
+
+            adjacencyMap.foreach { e:Array[Int] => g.addUndirectedEdge(e(0), e(1), e(2)) } 
+
+            g // return the newly constructed graph
+        }
+        else {
+            // return an invalid graph if the string representation is empty
+            new Graph(-1, 0, 0, Array[String]())
+        }
+
+    }
 
 }
