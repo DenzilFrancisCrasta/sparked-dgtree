@@ -1,0 +1,9 @@
+*.class
+*.swp
+*.log
+target/
+images/
+metastore_db/
+.nfs*
+*.dat
+*.vim
