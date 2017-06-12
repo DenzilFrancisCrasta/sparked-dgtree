@@ -36,6 +36,59 @@ class Edge  (
     override def hashCode = (xLabel+"#"+yLabel+"#"+edgeLabel.toString).hashCode 
 }
 
+
+class DGTree(dataGraphsMapRDD: RDD[(Int, Graph)]) {
+
+    val levels = new ArrayBuffer[RDD[DGTreeNode]]()
+   
+    def bootstrap() = {
+
+        val distinctNodeGutsRDD = dataGraphsMapRDD.values.flatMap( g => {
+            for (i <- 0 until g.vertexLabels.size) 
+                yield (g.vertexLabels(i),(g.id, List(i))) 
+        }).groupByKey()
+
+        val firstLevelNodesRDD = distinctNodeGutsRDD.map( nodeAndGuts => {
+
+            val nodeLabel = nodeAndGuts._1
+
+            // Feature Graph has one vertex whose label is provided by nodeLabel
+            val fGraph = new Graph(0, 1, 0, Array(nodeLabel))
+
+            // List of the graph id's which contain nodeLabel traditionally called support
+            val support = nodeAndGuts._2.map(_._1).toSet
+            val matches = nodeAndGuts._2.groupBy(kv => kv._1).mapValues(_.map(_._2).toList)  
+
+            // Add the DGTreeNode to the list of rootNodes being constructed
+            new DGTreeNode(fGraph, null, 0, support, support, matches)
+            
+        }).persist()
+
+        levels.append(firstLevelNodesRDD)
+
+    } 
+
+    def growNextLevel = {
+        /*
+        val children = new ArrayBuffer[DGTreeNode]()
+        rootNodes.copyToBuffer(children)
+        //rootNodes.foreach((node:DGTreeNode) =>  node.treeGrow(dataGraphsMapRDD))
+        rootNodes(2).treeGrow(dataGraphsMapRDD)
+
+        // create a dummy-root with the rootNodes as its children for single point entry
+        new DGTreeNode(new Graph(-1, 0, 0, Array()), null, 0, null, null, null, children)
+        */
+        println("Stub for growing next level")
+    
+    }
+
+}
+
+
+
+
+
+
 /** A node in the DGTree Index 
  *
  *  @param fGraph   the feature graph
@@ -55,14 +108,16 @@ class DGTreeNode (
     var fGraph: Graph,
     var growEdge: Edge,
     var edgeType: Int,
-    var S: RDD[Int],
-    var SStar: RDD[Int],
-    var matches: RDD[(Int, List[Int])], 
+    var S: Set[Int],
+    var SStar: Set[Int],
+    var matches: Map[Int, List[List[Int]]], 
     var children: ArrayBuffer[DGTreeNode] = ArrayBuffer[DGTreeNode](),
     var score: Double = 0.0,
     var matchesSize: Double = 0.0
 ) extends java.io.Serializable { 
+}
 
+/*
     def growMatches(sRDD: RDD[Int], 
                     dataGraphsMapRDD: RDD[(Int, Graph)],
                     parentMatchesMapRDD: RDD[(Int, List[Int])],
@@ -90,7 +145,6 @@ class DGTreeNode (
                                    val fuj = vertexAndLabel._1 
                                    val label  = vertexAndLabel._2 
                                    val index    = matchG.indexOf(fuj)
-                                   /* FIX-ME change edgeType to enum or named constants */
                                    val edgeType = if (index != -1) 0 else 1
 
                                    val uj       = if (index != -1) index else matchG.size
@@ -116,8 +170,10 @@ class DGTreeNode (
         return gPlusMatches
     }   
 
+    */
     /** instantiate a DGTree node from the guts 
      */
+/*
     def makeNodeFromGuts(guts: (Edge, Int, Set[Int], Set[Int], Double, Double),
                          dataGraphsMapRDD: RDD[(Int, Graph)]) : DGTreeNode = {
 
@@ -150,8 +206,10 @@ class DGTreeNode (
         
         new DGTreeNode(fGraph, guts._1, guts._2, sRDD, sStarRDD, gPlusMatches)
     }
-
+*/
     /** Grows the tree rooted at this node */
+
+/*
     def treeGrow(dataGraphsMapRDD: RDD[(Int, Graph)]): Unit = {
 
         var gutsMapRDD = candidateFeatures(dataGraphsMapRDD).persist()
@@ -196,9 +254,10 @@ class DGTreeNode (
         this.matches.unpersist()
 
     }
-
+*/
     /** Best candidate child node which has the highest score 
      */
+/*
     def bestFeature(C: Set[Int], 
                     candidateGutsMapRDD: RDD[(Edge, (Edge, Int, Set[Int], Set[Int], Double, Double))] 
                    ): ((Edge, Int, Set[Int], Set[Int], Double, Double),RDD[(Edge, (Edge, Int, Set[Int], Set[Int], Double, Double))]) = {
@@ -236,15 +295,15 @@ class DGTreeNode (
         //println("popped guts count " + poppedGutsMapRDD.count())
         (gPlus, prunedGutsMapRDD)
     }
-
+*/
     /** Candidate child nodes to choose from */ 
+/*
     def candidateFeatures( dataGraphsMapRDD: RDD[(Int, Graph)]) : RDD[(Edge, (Edge, Int, Set[Int], Set[Int], Double, Double))] =  {
 
         val supportStarMapRDD = SStar.map(g => (g, g))
                                     .join(dataGraphsMapRDD)
                                     .mapValues(kv => kv._2)
 
-        /********************************   PHASE-1 ********************************************/
 
         val phaseOneCandidateGutsMapRDD = supportStarMapRDD.join(matches).flatMap(kv => {
 
@@ -284,7 +343,6 @@ class DGTreeNode (
              }).reduceByKey((x, y) => (x._1, x._2, x._3.union(y._3)))
 
 
-        /********************************   PHASE-2 ********************************************/
 
         val supportMapRDD = S.map(g => (g, g))
                                     .join(dataGraphsMapRDD)
@@ -312,7 +370,6 @@ class DGTreeNode (
 
                                    val index    = matchG.indexOf(fuj)
 
-                                   /* FIX-ME change edgeType to enum or named constants */
                                    val edgeType = if (index != -1) 0 else 1
 
                                    val uj       = if (index != -1) index else matchG.size
@@ -359,10 +416,10 @@ class DGTreeNode (
                 })
 
     }
-
+*/
     /** Score for the current node */ 
+/*
     def updateScore() = {
-        /* FIX-ME make bias_score = number of datagraps in the dataset */
         val BIAS_SCORE = 100000
         val exclusivelyCoveredDatagraphs = SStar.count() 
         val coveredDatagraphs = S.count() 
@@ -385,4 +442,4 @@ class DGTreeNode (
             growEdge + fGraph + matches + matches_desription
 
     }
-}
+    */

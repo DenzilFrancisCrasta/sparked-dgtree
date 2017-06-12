@@ -15,77 +15,8 @@ import scala.io.StdIn.readInt
 object DGTreeApp {
 
     val APPNAME = "Distributed DGTree Application"
-
-
-    def DGTreeConstruct(dataGraphsRDD: RDD[Graph]): DGTreeNode = {
-        /** FIX-ME factor me out into a seperate Factory Method */
-
-        val dataGraphsMapRDD = dataGraphsRDD.map(g => (g.id, g)).persist()
-
-        // for each distinct node label in the datagraphs, store the datagraphs that contain it 
-        val nodeGraphMapRDD = dataGraphsRDD.flatMap(g => g.vertexLabels.distinct.map(s =>(s , g.id))).groupByKey().persist()
-
-        // unique node labels across the dataset
-        val uniqueNodeRDD = nodeGraphMapRDD.keys
-       
-
-        // Generate the cursory root nodes. One each for distinct nodeLabel in the datagraphs 
-        val rootNodes = uniqueNodeRDD.collect().map(node => {
-                     val nodeLabel = node
-
-                     // RDD of the graph id's which contain nodeLabel traditionally called support
-                     val support = nodeGraphMapRDD.filter(t => t._1 == node).values.flatMap((t:collection.Iterable[Int])=> t)
-
-                     // Feature Graph has one vertex whose label is provided by nodeLabel
-                     val fGraph = new Graph(0, 1, 0, Array(nodeLabel))
-                    
-                     val matches = support.map((_, nodeLabel))
-                                          .join(dataGraphsMapRDD)
-                                          .flatMap(nodeAndGraph => {
-                                       
-                                       // local variables for clarity 
-                                       val label = nodeAndGraph._2._1 
-                                       val graph = nodeAndGraph._2._2
-                                       val vertexLabels = graph.vertexLabels
-
-                                       // find all occurences/matches of label in vertexLabels
-                                       // and wrap each occurence index in a List for 
-                                       // subsequent operations to grow the match
-                                       val listOfMatches = for (i <- 0 until vertexLabels.size if vertexLabels(i) == label) yield List(i)
-                                       
-                                       // return graph-id as key and the matches as the value
-                                       listOfMatches.map((m:List[Int]) => (nodeAndGraph._1, m))
-                                   })
-
-                     matches.persist()
-                     support.persist()
-
-                     // Add the DGTreeNode to the list of rootNodes being constructed
-                     new DGTreeNode(fGraph, null, 0, support, support, matches)
-                })
-
-
-        /* 
-        println("Unique Node Labels Count " + uniqueNodeRDD.count())
-        uniqueNodeRDD.collect().foreach(( s:String) => print(s +" "))
-        println("")
-
-        println("Containment Map")
-        nodeGraphMapRDD.collect().foreach(x => {
-                print("[g.id=" + x._1 + "]: ")
-                println(x._2.mkString(","))
-                println("")
-                })
-                */
-
-        val children = new ArrayBuffer[DGTreeNode]()
-        rootNodes.copyToBuffer(children)
-        //rootNodes.foreach((node:DGTreeNode) =>  node.treeGrow(dataGraphsMapRDD))
-        rootNodes(2).treeGrow(dataGraphsMapRDD)
-
-        // create a dummy-root with the rootNodes as its children for single point entry
-        new DGTreeNode(new Graph(-1, 0, 0, Array()), null, 0, null, null, null, children)
-    } 
+    val GRAPH_DELIMITTER = "#"
+    val INVALID_GRAPH_ID = -1
 
     def main(args : Array[String]) {  
 
@@ -98,14 +29,10 @@ object DGTreeApp {
 
         // Generate RDD of string representations of data-graphs 
         val dataFile   = args(0)
-        /*
-        val totalLines = sc.wholeTextFiles(dataFile)
-        val graphData  = totalLines.flatMap(x => x._2.split("#"))
-        */
 
         val textFormatConf = new Configuration()
-        textFormatConf.set("textinputformat.record.delimiter","#")
-        val graphData = sc.newAPIHadoopFile(dataFile, 
+        textFormatConf.set("textinputformat.record.delimiter", GRAPH_DELIMITTER)
+        val graphStringsRDD = sc.newAPIHadoopFile(dataFile, 
                                             classOf[TextInputFormat], 
                                             classOf[LongWritable], 
                                             classOf[Text], 
@@ -113,9 +40,48 @@ object DGTreeApp {
                           
 
         // prune out any null invalid graphs from the datagraphsRDD 
-        val dataGraphsRDD = graphData.map(Graph.makeGraph).filter(_.id != -1)
-        val dataGraphsMapRDD = dataGraphsRDD.map(g => (g.id, g)).persist()
-        println(dataGraphsMapRDD.count())
+        val dataGraphsMapRDD = graphStringsRDD.map(Graph.makeGraph)
+                                              .filter(_.id != INVALID_GRAPH_ID)
+                                              .map(g => (g.id, g))
+                                              .persist()
+
+        //println(dataGraphsMapRDD.count())
+
+        // bootstrap the tree index 
+        val dgTree = new DGTree(dataGraphsMapRDD)
+        dgTree.bootstrap()
+
+        println("First Level Root Node counts " + dgTree.levels(0).count())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         //dataGraphsRDD.collect().foreach( g => g.render(g.id.toString, "images"))
        
