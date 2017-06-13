@@ -5,5 +5,4 @@ time spark-submit --master local[8] \
                   target/scala-2.11/sparked-dgtree_2.11-1.0.jar \
                   datasets/dataset.txt \
                   query.txt \
-                  2> /dev/null
 

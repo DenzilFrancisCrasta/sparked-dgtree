@@ -71,8 +71,22 @@ class DGTree(
 
     } 
 
-    def growNextLevel = {
+    def growNextLevel() = {
         println(levels.size)
+
+        val currentLevelRDD = levels(levels.size -1)
+
+        val matchesPerGraphIDMapRDD = currentLevelRDD.flatMap( node => {
+            node.matches.map( graphIdAndMatches => ( graphIdAndMatches._1, (node.UID, graphIdAndMatches._2) ) ) 
+        })
+
+        val matchesGraphMapRDD = matchesPerGraphIDMapRDD.join( dataGraphsMapRDD) 
+
+        println("Count of matches graph map " + matchesGraphMapRDD.count())
+
+
+
+
         /*
         val children = new ArrayBuffer[DGTreeNode]()
         rootNodes.copyToBuffer(children)
@@ -82,7 +96,6 @@ class DGTree(
         // create a dummy-root with the rootNodes as its children for single point entry
         new DGTreeNode(new Graph(-1, 0, 0, Array()), null, 0, null, null, null, children)
         */
-        println("Stub for growing next level")
     
     }
 
