@@ -72,6 +72,7 @@ class DGTree(
     } 
 
     def growNextLevel() = {
+
         println(levels.size)
 
         val currentLevelRDD = levels(levels.size -1)
@@ -82,9 +83,13 @@ class DGTree(
 
         val matchesGraphMapRDD = matchesPerGraphIDMapRDD.join( dataGraphsMapRDD) 
 
+            /*
+        val nextLevelNodes = matchesGraphMapRDD.map(graphAndMatches => {
+                
+        })
+        */
+
         println("Count of matches graph map " + matchesGraphMapRDD.count())
-
-
 
 
         /*
