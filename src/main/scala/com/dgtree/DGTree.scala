@@ -37,10 +37,13 @@ class Edge  (
 }
 
 
-class DGTree(dataGraphsMapRDD: RDD[(Int, Graph)]) {
+class DGTree(
+    dataGraphsMapRDD: RDD[(Int, Graph)]
+    ) extends java.io.Serializable {
 
     val levels = new ArrayBuffer[RDD[DGTreeNode]]()
    
+    /** Bootstrap the tree index building process */
     def bootstrap() = {
 
         val distinctNodeGutsRDD = dataGraphsMapRDD.values.flatMap( g => {
@@ -57,10 +60,10 @@ class DGTree(dataGraphsMapRDD: RDD[(Int, Graph)]) {
 
             // List of the graph id's which contain nodeLabel traditionally called support
             val support = nodeAndGuts._2.map(_._1).toSet
-            val matches = nodeAndGuts._2.groupBy(kv => kv._1).mapValues(_.map(_._2).toList)  
+            val matches = nodeAndGuts._2.groupBy(kv => kv._1).mapValues(_.map(_._2).toList).map(identity)  
 
             // Add the DGTreeNode to the list of rootNodes being constructed
-            new DGTreeNode(fGraph, null, 0, support, support, matches)
+            new DGTreeNode(null, fGraph, null, 0, support, support, matches)
             
         }).persist()
 
@@ -69,6 +72,7 @@ class DGTree(dataGraphsMapRDD: RDD[(Int, Graph)]) {
     } 
 
     def growNextLevel = {
+        println(levels.size)
         /*
         val children = new ArrayBuffer[DGTreeNode]()
         rootNodes.copyToBuffer(children)
@@ -91,6 +95,7 @@ class DGTree(dataGraphsMapRDD: RDD[(Int, Graph)]) {
 
 /** A node in the DGTree Index 
  *
+ *  @param parentUUID parents unique id 
  *  @param fGraph   the feature graph
  *  @param growEdge edge which is used to grow the feature graph of
  *                  the current node from its parent feature graph
@@ -105,6 +110,7 @@ class DGTree(dataGraphsMapRDD: RDD[(Int, Graph)]) {
  *  @param matchesSize total number of matches of fGrpah across graphs in S  
  */
 class DGTreeNode (
+    val parentUID: String, 
     var fGraph: Graph,
     var growEdge: Edge,
     var edgeType: Int,
@@ -115,6 +121,8 @@ class DGTreeNode (
     var score: Double = 0.0,
     var matchesSize: Double = 0.0
 ) extends java.io.Serializable { 
+
+    val UID = java.util.UUID.randomUUID()
 }
 
 /*
