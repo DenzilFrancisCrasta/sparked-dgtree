@@ -3,6 +3,6 @@ time spark-submit --master local[8] \
                   --jars lib/Graphviz4S-1.0-SNAPSHOT.jar \
                   --class com.dgtree.DGTreeApp \
                   target/scala-2.11/sparked-dgtree_2.11-1.0.jar \
-                  datasets/dataset.txt \
-                  query.txt \
+                  datasets/5000dataset.txt \
+                  datasets/queries/query.txt \
 

@@ -3,40 +3,6 @@ package com.dgtree;
 import org.apache.spark.rdd.RDD
 import scala.collection.mutable.ArrayBuffer 
 
-/** Representation for the grow-edge 
- *  @param x index of the first vertex
- *  @param y index of the second vertex
- *  @param xLabel label of the first vertex
- *  @param yLabel label of the second vertex
- *  @param edgeLabel label of the second vertex
- */
-class Edge  ( 
-    val x: Int,
-    val y: Int,
-    val xLabel : String,
-    val yLabel : String,
-    val edgeLabel: Int ) extends java.io.Serializable {
-
-    override def toString = xLabel +"(" +x+") --["+ edgeLabel+"]-- "+ yLabel +"("+y+")" 
-
-    override def equals(e: Any): Boolean = {
-      e match {
-          case e: Edge => if (this.x == e.x 
-                              && this.y == e.y 
-                              && this.xLabel == e.xLabel 
-                              && this.yLabel == e.yLabel 
-                              && this.edgeLabel == e.edgeLabel) 
-                              true 
-                          else 
-                              false
-          case _ => false
-      }
-    }
-
-    override def hashCode = (xLabel+"#"+yLabel+"#"+edgeLabel.toString).hashCode 
-}
-
-
 class DGTree(
     dataGraphsMapRDD: RDD[(Int, Graph)]
     ) extends java.io.Serializable {
@@ -78,18 +44,58 @@ class DGTree(
         val currentLevelRDD = levels(levels.size -1)
 
         val matchesPerGraphIDMapRDD = currentLevelRDD.flatMap( node => {
-            node.matches.map( graphIdAndMatches => ( graphIdAndMatches._1, (node.UID, graphIdAndMatches._2) ) ) 
+            node.matches.map( graphIdAndMatches => ( graphIdAndMatches._1, (node.UID, graphIdAndMatches._2, node.fGraph) ) ) 
         })
 
         val matchesGraphMapRDD = matchesPerGraphIDMapRDD.join( dataGraphsMapRDD) 
 
-            /*
-        val nextLevelNodes = matchesGraphMapRDD.map(graphAndMatches => {
-                
-        })
-        */
-
         println("Count of matches graph map " + matchesGraphMapRDD.count())
+
+        val nextLevelNodeGutsPhaseOneRDD = matchesGraphMapRDD.flatMap(graphAndMatches => {
+
+           val parentId = graphAndMatches._2._1._1
+           val matches  = graphAndMatches._2._1._2
+           val fGraph   = graphAndMatches._2._1._3
+           val G    = graphAndMatches._2._2
+
+           matches.flatMap( matchG => { 
+
+                  matchG.flatMap(fui => {
+
+                       val neighbours = G.getNeighbours(fui) 
+
+                       neighbours.map( vertexAndLabel => {
+
+                                   val ui = matchG.indexOf(fui)
+
+                                   val fuj = vertexAndLabel._1 
+                                   val label  = vertexAndLabel._2 
+
+                                   val index    = matchG.indexOf(fuj)
+                                   val edgeType = if (index != -1) 0 else 1
+                                   val uj       = if (index != -1) index else matchG.size
+
+                                   if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
+                                          val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
+                                          val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
+                                          ((e, parentId), (e, edgeType,  Set(G.id), List((G.id, newMatch)))) 
+                                   }     
+                                   else {
+                                          ((null, "dummy"), (null, 0, null, null)) 
+                                   }
+
+                       }) 
+                       
+                    })
+
+             })
+
+
+        }).filter(_._1._1 != null)
+          .reduceByKey((x, y) => (x._1, x._2, x._3.union(y._3), x._4 ++ y._4))
+
+        println("Next level Node guts count " + nextLevelNodeGutsPhaseOneRDD.count())
+
 
 
         /*
