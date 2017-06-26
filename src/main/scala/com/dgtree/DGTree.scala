@@ -39,12 +39,12 @@ class DGTree(
 
     def getfilteredMatches(levelRDD: RDD[DGTreeNode],
                            filterBy: Int
-                          ): RDD[(Int, (String, List[List[Int]], Graph))] = {
+                          ): RDD[(Int, (java.util.UUID, List[List[Int]], Graph))] = {
 
         levelRDD.flatMap( node => {
             // determine to filter by S set or SStar set 
             val filterMaster = if (filterBy == 0) node.S else node.SStar
-            node.matches.filter(filterMaster.contains(_._1))
+            node.matches.filter(aMatch => filterMaster.contains(aMatch._1))
                         .map( graphIdAndMatches => (graphIdAndMatches._1, (node.UID,  graphIdAndMatches._2, node.fGraph))) 
         })
     
@@ -59,11 +59,11 @@ class DGTree(
 
         val phaseOneMatchesRDD = getfilteredMatches(currentLevelRDD, 1)
 
-        val phaseOnematchesGraphMapRDD = phaseOnematchesRDD.join(dataGraphsMapRDD) 
+        val phaseOneMatchesGraphMapRDD = phaseOneMatchesRDD.join(dataGraphsMapRDD) 
 
-        println("Count of matches graph map " + phaseOnematchesGraphMapRDD.count())
+        println("Count of matches graph map " + phaseOneMatchesGraphMapRDD.count())
 
-        val nextLevelNodeGutsPhaseOneRDD = phaseOnematchesGraphMapRDD.flatMap(graphAndMatches => {
+        val nextLevelNodeGutsPhaseOneRDD = phaseOneMatchesGraphMapRDD.flatMap(graphAndMatches => {
 
            val parentId = graphAndMatches._2._1._1
            val matches  = graphAndMatches._2._1._2
