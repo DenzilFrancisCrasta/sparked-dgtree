@@ -7,9 +7,10 @@ class DGTree(
     dataGraphsMapRDD: RDD[(Int, Graph)]
     ) extends java.io.Serializable {
 
-    type PhaseOneGuts = RDD[((Edge, java.util.UUID), (Edge, Int,  Set[Int]))] 
-    type PhaseTwoGuts = RDD[((Edge, java.util.UUID), (Set[Int], List[(Int, List[Int])]))] 
-    type GraphMatches = RDD[(Int, (java.util.UUID, List[List[Int]], Graph))]
+    type PhaseOneGuts = RDD[((Edge, String), (Edge, Int,  Set[Int]))] 
+    type PhaseTwoGuts = RDD[((Edge, String), (Set[Int], List[(Int, List[Int])]))] 
+    type GraphMatches = RDD[(Int, (String, List[List[Int]], Graph))]
+    type DataGraphMatches = RDD[(Int, ((String, List[List[Int]], Graph), Graph))]
 
     val levels = new ArrayBuffer[RDD[DGTreeNode]]()
    
@@ -55,7 +56,7 @@ class DGTree(
     } 
 
 
-    def growPhaseOneGuts( graphMatchesRDD: GraphMatches): PhaseOneGuts = {
+    def growPhaseOneGuts( graphMatchesRDD: DataGraphMatches): PhaseOneGuts = {
 
         graphMatchesRDD.flatMap(graphAndMatches => {
 
@@ -103,7 +104,7 @@ class DGTree(
     
     }
 
-    def growPhaseTwoGuts( graphMatchesRDD: GraphMatches): PhaseTwoGuts = {
+    def growPhaseTwoGuts( graphMatchesRDD: DataGraphMatches): PhaseTwoGuts = {
 
         graphMatchesRDD.flatMap(graphAndMatches => {
 
@@ -154,16 +155,16 @@ class DGTree(
         println("Number of Levels Generated :" + levels.size)
 
         val lastLevelRDD = levels(levels.size -1)
-
-        val phaseOneIterableRDD = getfilteredMatches(lastLevelRDD, 1).join( dataGraphsMapRDD) 
+        val phaseOneFilteredMatches = getfilteredMatches(lastLevelRDD, 1)
+        val phaseOneIterableRDD = phaseOneFilteredMatches.join( dataGraphsMapRDD) 
 
         println("Count of matches graph map " + phaseOneIterableRDD.count())
 
-        phaseOneGutsRDD = growPhaseOneGuts(phaseOneIterableRDD)
+        val phaseOneGutsRDD = growPhaseOneGuts(phaseOneIterableRDD)
         println("Next level Node Phase One guts count " + phaseOneGutsRDD.count())
 
         val phaseTwoIterableRDD = getfilteredMatches(lastLevelRDD, 0).join( dataGraphsMapRDD) 
-        phaseTwoGutsRDD = growPhaseTwoGuts(phaseTwoIterableRDD)
+        val phaseTwoGutsRDD = growPhaseTwoGuts(phaseTwoIterableRDD)
         println("Next level Node Phase Two guts count " + phaseTwoGutsRDD.count())
 
         val nextLevelGutsRDD = phaseOneGutsRDD.join(phaseTwoGutsRDD)
@@ -218,7 +219,7 @@ class DGTreeNode (
     var matchesSize: Double = 0.0
 ) extends java.io.Serializable { 
 
-    val UID = java.util.UUID.randomUUID()
+    val UID = java.util.UUID.randomUUID.toString
 }
 
 /*
