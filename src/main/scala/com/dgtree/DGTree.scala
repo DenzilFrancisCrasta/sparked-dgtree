@@ -37,26 +37,38 @@ class DGTree(
 
     } 
 
+    def getfilteredMatches(levelRDD: RDD[DGTreeNode],
+                           filterBy: Int
+                          ): RDD[(Int, (String, List[List[Int]], Graph))] = {
+
+        levelRDD.flatMap( node => {
+            // determine to filter by S set or SStar set 
+            val filterMaster = if (filterBy == 0) node.S else node.SStar
+            node.matches.filter(filterMaster.contains(_._1))
+                        .map( graphIdAndMatches => (graphIdAndMatches._1, (node.UID,  graphIdAndMatches._2, node.fGraph))) 
+        })
+    
+    } 
+
     def growNextLevel() = {
 
         println(levels.size)
 
         val currentLevelRDD = levels(levels.size -1)
 
-        val matchesPerGraphIDMapRDD = currentLevelRDD.flatMap( node => {
-            node.matches.map( graphIdAndMatches => ( graphIdAndMatches._1, (node.UID, graphIdAndMatches._2, node.fGraph) ) ) 
-        })
 
-        val matchesGraphMapRDD = matchesPerGraphIDMapRDD.join( dataGraphsMapRDD) 
+        val phaseOneMatchesRDD = getfilteredMatches(currentLevelRDD, 1)
 
-        println("Count of matches graph map " + matchesGraphMapRDD.count())
+        val phaseOnematchesGraphMapRDD = phaseOnematchesRDD.join(dataGraphsMapRDD) 
 
-        val nextLevelNodeGutsPhaseOneRDD = matchesGraphMapRDD.flatMap(graphAndMatches => {
+        println("Count of matches graph map " + phaseOnematchesGraphMapRDD.count())
+
+        val nextLevelNodeGutsPhaseOneRDD = phaseOnematchesGraphMapRDD.flatMap(graphAndMatches => {
 
            val parentId = graphAndMatches._2._1._1
            val matches  = graphAndMatches._2._1._2
            val fGraph   = graphAndMatches._2._1._3
-           val G    = graphAndMatches._2._2
+           val G        = graphAndMatches._2._2
 
            matches.flatMap( matchG => { 
 
@@ -76,12 +88,13 @@ class DGTree(
                                    val uj       = if (index != -1) index else matchG.size
 
                                    if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
-                                          val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
-                                          val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
-                                          ((e, parentId), (e, edgeType,  Set(G.id), List((G.id, newMatch)))) 
+                                       val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
+                                       //  val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
+                                       //  ((e, parentId), (e, edgeType,  Set(G.id), List((G.id, newMatch)))) 
+                                       ((e, parentId), (e, edgeType,  Set(G.id))) 
                                    }     
                                    else {
-                                          ((null, "dummy"), (null, 0, null, null)) 
+                                          ((null, "dummy"), (null, 0, null)) 
                                    }
 
                        }) 
@@ -92,7 +105,7 @@ class DGTree(
 
 
         }).filter(_._1._1 != null)
-          .reduceByKey((x, y) => (x._1, x._2, x._3.union(y._3), x._4 ++ y._4))
+          .reduceByKey((x, y) => (x._1, x._2, x._3.union(y._3)))
 
         println("Next level Node guts count " + nextLevelNodeGutsPhaseOneRDD.count())
 
