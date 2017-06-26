@@ -7,6 +7,10 @@ class DGTree(
     dataGraphsMapRDD: RDD[(Int, Graph)]
     ) extends java.io.Serializable {
 
+    type PhaseOneGuts = RDD[((Edge, java.util.UUID), (Edge, Int,  Set[Int]))] 
+    type PhaseTwoGuts = RDD[((Edge, java.util.UUID), (Set[Int], List[(Int, List[Int])]))] 
+    type GraphMatches = RDD[(Int, (java.util.UUID, List[List[Int]], Graph))]
+
     val levels = new ArrayBuffer[RDD[DGTreeNode]]()
    
     /** Bootstrap the tree index building process */
@@ -39,7 +43,7 @@ class DGTree(
 
     def getfilteredMatches(levelRDD: RDD[DGTreeNode],
                            filterBy: Int
-                          ): RDD[(Int, (java.util.UUID, List[List[Int]], Graph))] = {
+                          ): GraphMatches = {
 
         levelRDD.flatMap( node => {
             // determine to filter by S set or SStar set 
@@ -50,20 +54,10 @@ class DGTree(
     
     } 
 
-    def growNextLevel() = {
 
-        println(levels.size)
+    def growPhaseOneGuts( graphMatchesRDD: GraphMatches): PhaseOneGuts = {
 
-        val currentLevelRDD = levels(levels.size -1)
-
-
-        val phaseOneMatchesRDD = getfilteredMatches(currentLevelRDD, 1)
-
-        val phaseOneMatchesGraphMapRDD = phaseOneMatchesRDD.join(dataGraphsMapRDD) 
-
-        println("Count of matches graph map " + phaseOneMatchesGraphMapRDD.count())
-
-        val nextLevelNodeGutsPhaseOneRDD = phaseOneMatchesGraphMapRDD.flatMap(graphAndMatches => {
+        graphMatchesRDD.flatMap(graphAndMatches => {
 
            val parentId = graphAndMatches._2._1._1
            val matches  = graphAndMatches._2._1._2
@@ -106,9 +100,74 @@ class DGTree(
 
         }).filter(_._1._1 != null)
           .reduceByKey((x, y) => (x._1, x._2, x._3.union(y._3)))
+    
+    }
 
-        println("Next level Node guts count " + nextLevelNodeGutsPhaseOneRDD.count())
+    def growPhaseTwoGuts( graphMatchesRDD: GraphMatches): PhaseTwoGuts = {
 
+        graphMatchesRDD.flatMap(graphAndMatches => {
+
+           val parentId = graphAndMatches._2._1._1
+           val matches  = graphAndMatches._2._1._2
+           val fGraph   = graphAndMatches._2._1._3
+           val G        = graphAndMatches._2._2
+
+           matches.flatMap( matchG => { 
+
+                  matchG.flatMap(fui => {
+
+                       val neighbours = G.getNeighbours(fui) 
+
+                       neighbours.map( vertexAndLabel => {
+
+                                   val ui = matchG.indexOf(fui)
+
+                                   val fuj = vertexAndLabel._1 
+                                   val label  = vertexAndLabel._2 
+
+                                   val index    = matchG.indexOf(fuj)
+                                   val edgeType = if (index != -1) 0 else 1
+                                   val uj       = if (index != -1) index else matchG.size
+
+                                   if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
+                                       val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
+                                       val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
+                                       ((e, parentId), (Set(G.id), List((G.id, newMatch)))) 
+                                   }     
+                                   else {
+                                          ((null, "dummy"), (null, null)) 
+                                   }
+
+                       }) 
+                       
+                    })
+
+             })
+
+        }).filter(_._1._1 != null)
+          .reduceByKey((x, y) => (x._1.union(y._1), x._2 ++ y._2))
+    
+    }
+
+    def growNextLevel() = {
+
+        println("Number of Levels Generated :" + levels.size)
+
+        val lastLevelRDD = levels(levels.size -1)
+
+        val phaseOneIterableRDD = getfilteredMatches(lastLevelRDD, 1).join( dataGraphsMapRDD) 
+
+        println("Count of matches graph map " + phaseOneIterableRDD.count())
+
+        phaseOneGutsRDD = growPhaseOneGuts(phaseOneIterableRDD)
+        println("Next level Node Phase One guts count " + phaseOneGutsRDD.count())
+
+        val phaseTwoIterableRDD = getfilteredMatches(lastLevelRDD, 0).join( dataGraphsMapRDD) 
+        phaseTwoGutsRDD = growPhaseTwoGuts(phaseTwoIterableRDD)
+        println("Next level Node Phase Two guts count " + phaseTwoGutsRDD.count())
+
+        val nextLevelGutsRDD = phaseOneGutsRDD.join(phaseTwoGutsRDD)
+        println("Next level Node  guts count " + nextLevelGutsRDD.count())
 
 
         /*
