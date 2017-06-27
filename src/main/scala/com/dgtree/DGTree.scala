@@ -12,6 +12,8 @@ class DGTree(
     type GraphMatches = RDD[(Int, (String, List[List[Int]], Graph))]
     type DataGraphMatches = RDD[(Int, ((String, List[List[Int]], Graph), Graph))]
 
+    val BIAS_SCORE = dataGraphsMapRDD.count()
+
     val levels = new ArrayBuffer[RDD[DGTreeNode]]()
    
     /** Bootstrap the tree index building process */
@@ -168,8 +170,28 @@ class DGTree(
         println("Next level Node Phase Two guts count " + phaseTwoGutsRDD.count())
 
         val nextLevelGutsRDD = phaseOneGutsRDD.join(phaseTwoGutsRDD)
-        println("Next level Node  guts count " + nextLevelGutsRDD.count())
 
+
+        val cleanedNextLevelGutsRDD.mapValues( guts => {
+            val growEdge = guts._1._1
+            val edgeType = guts._1._2
+            val sStarSet = guts._1._3
+            val sSet = guts._2._1
+            val matchesSize = guts._2._2.size
+            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_.map(_._2)))
+                    
+            // calculate score for the candidate 
+            val exclusivelyCoveredDatagraphs = sStarSet.size 
+            val coveredDatagraphs = sSet.size 
+            val avgMatches: Double = matchesSize.toDouble / coveredDatagraphs.toDouble 
+            val score: Double  = exclusivelyCoveredDatagraphs.toDouble / avgMatches
+            val finalScore = if (edgeType == 0) score + BIAS_SCORE else score
+
+            (growEdge, edgeType, sStarSet, sSet, matches, matchesSize, finalScore)
+        
+        })
+
+        println("Next level Node  guts count " + cleanedNextLevelGutsRDD.count())
 
         /*
         val children = new ArrayBuffer[DGTreeNode]()
