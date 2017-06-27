@@ -52,7 +52,6 @@ object DGTreeApp {
         dgTree.bootstrap()
         dgTree.growNextLevel()
 
-        println(dgTree.levels(dgTree.levels.size -1).take(1)(0).UID)
 
         println("First Level Root Node counts " + dgTree.levels(0).count())
 

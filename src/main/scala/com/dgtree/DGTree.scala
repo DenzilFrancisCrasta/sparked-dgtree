@@ -163,7 +163,10 @@ class DGTree(
             val parentfGraph = guts._1._5
             val sSet = guts._2._1
             val matchesSize = guts._2._2.size
-            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2))
+
+            //  https://issues.scala-lang.org/browse/SI-7005 Map#mapValues is not serializable 
+            //  therefore we need to use map(identity)
+            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2)).map(identity)
                     
             // calculate score for the candidate 
             val exclusivelyCoveredDatagraphs = sStarSet.size 
@@ -213,8 +216,10 @@ class DGTree(
 
         val nexLevelNodesRDD = makeNodesFromGuts(nextLevelGutsRDD)
 
+        val nodesGroupedByParentRDD = nexLevelNodesRDD.groupBy(_._1)
 
         println("Next level Node  guts count " + nexLevelNodesRDD.count())
+        println("Next level Node  guts count " + nodesGroupedByParentRDD.count())
 
     }
 
