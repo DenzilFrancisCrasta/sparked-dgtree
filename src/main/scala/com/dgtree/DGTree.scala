@@ -172,13 +172,13 @@ class DGTree(
         val nextLevelGutsRDD = phaseOneGutsRDD.join(phaseTwoGutsRDD)
 
 
-        val cleanedNextLevelGutsRDD.mapValues( guts => {
+        val cleanedNextLevelGutsRDD = nextLevelGutsRDD.mapValues( guts => {
             val growEdge = guts._1._1
             val edgeType = guts._1._2
             val sStarSet = guts._1._3
             val sSet = guts._2._1
             val matchesSize = guts._2._2.size
-            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_.map(_._2)))
+            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2))
                     
             // calculate score for the candidate 
             val exclusivelyCoveredDatagraphs = sStarSet.size 
