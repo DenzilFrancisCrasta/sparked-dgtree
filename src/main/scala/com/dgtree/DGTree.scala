@@ -36,16 +36,30 @@ class DGTree(
 
             // List of the graph id's which contain nodeLabel traditionally called support
             val support = nodeAndGuts._2.map(_._1).toSet
+            val matchesSize = nodeAndGuts._2.size
             val matches = nodeAndGuts._2.groupBy(kv => kv._1).mapValues(_.map(_._2).toList).map(identity)  
 
             // Add the DGTreeNode to the list of rootNodes being constructed
-            val newNode = new DGTreeNode(null, fGraph, null, 0, support, support, matches)
-            println(newNode.nUUID)
-            newNode
-            
-        }).persist(StorageLevel.MEMORY_AND_DISK)
+            val newNode = new DGTreeNode(null, fGraph, null, 0, support, support, matches, 0, matchesSize)
+            newNode.calcScore(BIAS_SCORE)
+            //println(newNode.nUUID)
+            ("dummy", newNode)
 
-        levels.append(firstLevelNodesRDD)
+        }).groupByKey()
+          .mapValues( nodes => {
+                 val pq = new PriorityQueue[DGTreeNode]()
+                 pq ++= nodes
+                 pq
+          })
+
+        val toCover = dataGraphsMapRDD.keys.map(("dummy", _))
+                                      .groupByKey()
+                                      .mapValues(_.toSet) 
+        val sievedFirstLevel = sieveChildren(firstLevelNodesRDD.join(toCover))
+        sievedFirstLevel.persist(StorageLevel.MEMORY_AND_DISK)
+
+        println("First level count " + sievedFirstLevel.count)
+        levels.append(sievedFirstLevel)
 
     } 
 
@@ -239,11 +253,11 @@ class DGTree(
                 val pQueue = pQueueAndSStar._1
                 var C = pQueueAndSStar._2
 
-                println("to be covered graph size " + C.size)
+                //println("to be covered graph size " + C.size)
                 val sievedChildren = new ArrayBuffer[DGTreeNode]()
 
                 while (!C.isEmpty) {
-                    println(C.size)
+                    //println(C.size)
                     var bestChildNode = pQueue.dequeue
 
                     while (! bestChildNode.SStar.subsetOf(C)) {
@@ -266,7 +280,7 @@ class DGTree(
                 }
 
                 sievedChildren
-        })
+        }).persist(StorageLevel.MEMORY_AND_DISK)
     
     }
 
@@ -275,12 +289,7 @@ class DGTree(
         println("Number of Levels Generated :" + levels.size)
 
         val lastLevelRDD = levels(levels.size -1)
-        val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, node.SStar))
-        parentSStarMapRDD.persist()
 
-        println("parent SStar Map Count "+ parentSStarMapRDD.count)
-        println("sstart join  keys")
-        //parentSStarMapRDD.keys.collect().foreach(println)
 
         val candidateMapRDD = candidateFeatures(lastLevelRDD)
 
@@ -291,6 +300,10 @@ class DGTree(
          * its candidate children in a priority queue and the SStar of the parent 
          */
 
+        val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, node.SStar))
+        //println("parent SStar Map Count "+ parentSStarMapRDD.count)
+        //println("sstart join  keys")
+        //parentSStarMapRDD.keys.collect().foreach(println)
 
         val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
 
@@ -303,9 +316,6 @@ class DGTree(
     }
 
 }
-
-
-
 
 
 
