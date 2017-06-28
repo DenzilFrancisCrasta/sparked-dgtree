@@ -1,6 +1,7 @@
 package com.dgtree;
 
 import org.apache.spark.rdd.RDD
+import scala.collection.mutable.{ArrayBuffer, PriorityQueue}
 import scala.collection.mutable.ArrayBuffer 
 
 class DGTree(
@@ -195,12 +196,9 @@ class DGTree(
         nodesPerParentRDD
     }
 
-    def growNextLevel() = {
+    def candidateFeatures(levelRDD: RDD[DGTreeNode]): RDD[(String, PriorityQueue[DGTreeNode])] = {
 
-        println("Number of Levels Generated :" + levels.size)
-
-        val lastLevelRDD = levels(levels.size -1)
-        val phaseOneFilteredMatches = getfilteredMatches(lastLevelRDD, 1)
+        val phaseOneFilteredMatches = getfilteredMatches(levelRDD, 1)
         val phaseOneIterableRDD = phaseOneFilteredMatches.join( dataGraphsMapRDD) 
 
         println("Count of matches graph map " + phaseOneIterableRDD.count())
@@ -208,7 +206,7 @@ class DGTree(
         val phaseOneGutsRDD = growPhaseOneGuts(phaseOneIterableRDD)
         println("Next level Node Phase One guts count " + phaseOneGutsRDD.count())
 
-        val phaseTwoIterableRDD = getfilteredMatches(lastLevelRDD, 0).join( dataGraphsMapRDD) 
+        val phaseTwoIterableRDD = getfilteredMatches(levelRDD, 0).join( dataGraphsMapRDD) 
         val phaseTwoGutsRDD = growPhaseTwoGuts(phaseTwoIterableRDD)
         println("Next level Node Phase Two guts count " + phaseTwoGutsRDD.count())
 
@@ -216,10 +214,73 @@ class DGTree(
 
         val nexLevelNodesRDD = makeNodesFromGuts(nextLevelGutsRDD)
 
-        val nodesGroupedByParentRDD = nexLevelNodesRDD.groupBy(_._1)
+        val nodesPQueueMapRDD = nexLevelNodesRDD.groupBy(_._1)
+                                                .mapValues(stringAndNodes => {
+                                                    val pq = new PriorityQueue[DGTreeNode]()
+                                                    pq ++= stringAndNodes.map(_._2)
+                                                    pq
+                                                })
 
-        println("Next level Node  guts count " + nexLevelNodesRDD.count())
-        println("Next level Node  guts count " + nodesGroupedByParentRDD.count())
+        println("Next level Node  guts count " + nodesPQueueMapRDD.count())
+
+        nodesPQueueMapRDD
+
+    }
+
+    def sieveChildren(nodePQueueRDD: RDD[(String, (PriorityQueue[DGTreeNode], Set[Int]))]): RDD[DGTreeNode] = {
+
+        nodePQueueRDD.flatMap(kv => {
+                val pQueueAndSStar = kv._2
+                val pQueue = pQueueAndSStar._1
+                var C = pQueueAndSStar._2
+
+                val sievedChildren = new ArrayBuffer[DGTreeNode]()
+
+                while (!C.isEmpty) {
+                    println(C.size)
+                    var bestChildNode = pQueue.dequeue
+
+                    while (! bestChildNode.SStar.subsetOf(C)) {
+
+                        // Lazy update the SStar to be consistent with uncovered Datagraphs in C
+                        bestChildNode.SStar = bestChildNode.SStar.intersect(C)
+
+                        if (!bestChildNode.SStar.isEmpty) {
+                            // update the score of the node and add it back to the Priority Queue
+                            bestChildNode.calcScore(BIAS_SCORE)
+                            pQueue += bestChildNode
+                        }
+
+                        bestChildNode = pQueue.dequeue 
+                    }
+
+                    // add the chosen childnode to the final list of children
+                    sievedChildren += bestChildNode
+                    C = C.diff(bestChildNode.SStar)
+                }
+
+                sievedChildren
+        })
+    
+    }
+
+    def growNextLevel() = {
+
+        println("Number of Levels Generated :" + levels.size)
+
+        val lastLevelRDD = levels(levels.size -1)
+        val candidateMapRDD = candidateFeatures(lastLevelRDD)
+
+        /* create a MapRDD with key as parent node id and value as a tuple of 
+         * its candidate children in a priority queue and the SStar of the parent 
+         */
+        val parentSStarMapRDD = lastLevelRDD.map(node => (node.UID, node.SStar))
+        val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
+
+
+        levels += sieveChildren( candidateChildrenRDD )
+
+        println("Added sieved children level count" + levels(levels.size-1).count)
 
     }
 
@@ -257,9 +318,19 @@ class DGTreeNode (
     var score: Double = 0.0,
     var matchesSize: Double = 0.0,
     var children: ArrayBuffer[DGTreeNode] = ArrayBuffer[DGTreeNode]()
-) extends java.io.Serializable { 
+) extends java.io.Serializable with Ordered[DGTreeNode]{ 
 
     val UID = java.util.UUID.randomUUID.toString
+
+    def compare(that: DGTreeNode): Int = this.score.compareTo(that.score)
+
+    def calcScore(BIAS_SCORE: Double) = {
+        val exclusivelyCoveredDatagraphs = SStar.size.toDouble
+        val coveredDatagraphs = S.size.toDouble 
+        val avgMatches  = matchesSize / coveredDatagraphs 
+        val score  = exclusivelyCoveredDatagraphs / avgMatches
+        this.score = if (edgeType == 0) score + BIAS_SCORE else score
+    } 
 }
 
 /*
