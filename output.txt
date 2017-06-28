@@ -1,5 +1,1 @@
 Number of Levels Generated :1
-Count of matches graph map 11541
-Next level Node Phase One guts count 41
-Next level Node Phase Two guts count 41
-Next level Node  guts count 41

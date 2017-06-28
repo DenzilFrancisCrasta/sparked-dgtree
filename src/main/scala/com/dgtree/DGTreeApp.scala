@@ -53,34 +53,6 @@ object DGTreeApp {
         dgTree.growNextLevel()
 
 
-        println("First Level Root Node counts " + dgTree.levels(0).count())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

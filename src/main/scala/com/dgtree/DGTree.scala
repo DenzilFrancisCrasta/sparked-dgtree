@@ -3,16 +3,17 @@ package com.dgtree;
 import org.apache.spark.rdd.RDD
 import scala.collection.mutable.{ArrayBuffer, PriorityQueue}
 import scala.collection.mutable.ArrayBuffer 
+import org.apache.spark.storage.StorageLevel
 
 class DGTree(
     dataGraphsMapRDD: RDD[(Int, Graph)]
     ) extends java.io.Serializable {
 
     type PhaseOneGuts = RDD[((Edge, String), (Edge, String, Int,  Set[Int], Graph))] 
-    type PhaseTwoGuts = RDD[((Edge, String), (Set[Int], List[(Int, List[Int])]))] 
+    type PhaseTwoGuts = RDD[((Edge, String), (Set[Int], ArrayBuffer[(Int, List[Int])]))] 
     type GraphMatches = RDD[(Int, (String, List[List[Int]], Graph))]
     type DataGraphMatches = RDD[(Int, ((String, List[List[Int]], Graph), Graph))]
-    type MergedGuts = RDD[((Edge, String), ((Edge, String, Int,  Set[Int], Graph),  (Set[Int], List[(Int, List[Int])])))]
+    type MergedGuts = RDD[((Edge, String), ((Edge, String, Int,  Set[Int], Graph),  (Set[Int], ArrayBuffer[(Int, List[Int])])))]
 
     val BIAS_SCORE = dataGraphsMapRDD.count()
 
@@ -38,9 +39,11 @@ class DGTree(
             val matches = nodeAndGuts._2.groupBy(kv => kv._1).mapValues(_.map(_._2).toList).map(identity)  
 
             // Add the DGTreeNode to the list of rootNodes being constructed
-            new DGTreeNode(null, fGraph, null, 0, support, support, matches)
+            val newNode = new DGTreeNode(null, fGraph, null, 0, support, support, matches)
+            println(newNode.nUUID)
+            newNode
             
-        }).persist()
+        }).persist(StorageLevel.MEMORY_AND_DISK)
 
         levels.append(firstLevelNodesRDD)
 
@@ -54,7 +57,7 @@ class DGTree(
             // determine to filter by S set or SStar set 
             val filterMaster = if (filterBy == 0) node.S else node.SStar
             node.matches.filter(aMatch => filterMaster.contains(aMatch._1))
-                        .map( graphIdAndMatches => (graphIdAndMatches._1, (node.UID,  graphIdAndMatches._2, node.fGraph))) 
+                        .map( graphIdAndMatches => (graphIdAndMatches._1, (node.nUUID,  graphIdAndMatches._2, node.fGraph))) 
         })
     
     } 
@@ -137,7 +140,9 @@ class DGTree(
                                    if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
                                        val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
                                        val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
-                                       ((e, parentId), (Set(G.id), List((G.id, newMatch)))) 
+                                       val nM = new ArrayBuffer[(Int, List[Int])](1)
+                                       nM.append((G.id, newMatch))
+                                       ((e, parentId), (Set(G.id), nM)) 
                                    }     
                                    else {
                                           ((null, "dummy"), (null, null)) 
@@ -150,7 +155,7 @@ class DGTree(
              })
 
         }).filter(_._1._1 != null)
-          .reduceByKey((x, y) => (x._1.union(y._1), x._2 ++ y._2))
+          .reduceByKey((x, y) => (x._1.union(y._1), x._2 ++= y._2))
     
     }
 
@@ -167,7 +172,7 @@ class DGTree(
 
             //  https://issues.scala-lang.org/browse/SI-7005 Map#mapValues is not serializable 
             //  therefore we need to use map(identity)
-            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2)).map(identity)
+            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
                     
             // calculate score for the candidate 
             val exclusivelyCoveredDatagraphs = sStarSet.size 
@@ -201,14 +206,14 @@ class DGTree(
         val phaseOneFilteredMatches = getfilteredMatches(levelRDD, 1)
         val phaseOneIterableRDD = phaseOneFilteredMatches.join( dataGraphsMapRDD) 
 
-        println("Count of matches graph map " + phaseOneIterableRDD.count())
+        //println("Count of matches graph map " + phaseOneIterableRDD.count())
 
         val phaseOneGutsRDD = growPhaseOneGuts(phaseOneIterableRDD)
-        println("Next level Node Phase One guts count " + phaseOneGutsRDD.count())
+        //println("Next level Node Phase One guts count " + phaseOneGutsRDD.count())
 
         val phaseTwoIterableRDD = getfilteredMatches(levelRDD, 0).join( dataGraphsMapRDD) 
         val phaseTwoGutsRDD = growPhaseTwoGuts(phaseTwoIterableRDD)
-        println("Next level Node Phase Two guts count " + phaseTwoGutsRDD.count())
+        //println("Next level Node Phase Two guts count " + phaseTwoGutsRDD.count())
 
         val nextLevelGutsRDD = phaseOneGutsRDD.join(phaseTwoGutsRDD)
 
@@ -221,7 +226,7 @@ class DGTree(
                                                     pq
                                                 })
 
-        println("Next level Node  guts count " + nodesPQueueMapRDD.count())
+        //println("Next level Node  guts count " + nodesPQueueMapRDD.count())
 
         nodesPQueueMapRDD
 
@@ -234,6 +239,7 @@ class DGTree(
                 val pQueue = pQueueAndSStar._1
                 var C = pQueueAndSStar._2
 
+                println("to be covered graph size " + C.size)
                 val sievedChildren = new ArrayBuffer[DGTreeNode]()
 
                 while (!C.isEmpty) {
@@ -269,15 +275,27 @@ class DGTree(
         println("Number of Levels Generated :" + levels.size)
 
         val lastLevelRDD = levels(levels.size -1)
+        val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, node.SStar))
+        parentSStarMapRDD.persist()
+
+        println("parent SStar Map Count "+ parentSStarMapRDD.count)
+        println("sstart join  keys")
+        //parentSStarMapRDD.keys.collect().foreach(println)
+
         val candidateMapRDD = candidateFeatures(lastLevelRDD)
+
+        println("candidate keys")
+        //candidateMapRDD.keys.collect().foreach(println)
 
         /* create a MapRDD with key as parent node id and value as a tuple of 
          * its candidate children in a priority queue and the SStar of the parent 
          */
-        val parentSStarMapRDD = lastLevelRDD.map(node => (node.UID, node.SStar))
+
+
         val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
 
 
+        //println("After joining with SStar" + candidateChildrenRDD.count)
         levels += sieveChildren( candidateChildrenRDD )
 
         println("Added sieved children level count" + levels(levels.size-1).count)
@@ -320,7 +338,7 @@ class DGTreeNode (
     var children: ArrayBuffer[DGTreeNode] = ArrayBuffer[DGTreeNode]()
 ) extends java.io.Serializable with Ordered[DGTreeNode]{ 
 
-    val UID = java.util.UUID.randomUUID.toString
+    val nUUID = java.util.UUID.randomUUID.toString
 
     def compare(that: DGTreeNode): Int = this.score.compareTo(that.score)
 
@@ -333,41 +351,6 @@ class DGTreeNode (
     } 
 }
 
-/*
-    def makeNodeFromGuts(guts: (Edge, Int, Set[Int], Set[Int], Double, Double),
-                         dataGraphsMapRDD: RDD[(Int, Graph)]) : DGTreeNode = {
-
-        // convert the S and SStar sets into RDDs
-        val sRDD     = S.filter(guts._4.contains(_)).persist()
-        val sStarRDD = S.filter(guts._3.contains(_)).persist()
-
-        // predicate to determine if featureGraph has grown by a vertex or not
-        val extraVertex = if (guts._2 == 0 || guts._1 == null) false else true
-
-        // create the clone of the parents fGraph with an extraVertex added based on the predicate 
-        val fGraph = this.fGraph.getSuccessor(extraVertex)
-
-        if (extraVertex) {
-            val index = fGraph.vertexCount-1
-            fGraph.vertexLabels(index) = guts._1.yLabel 
-            fGraph.adjacencyList(index) = Nil 
-        }
-
-        // add the grow edge to the feature graph 
-        var gPlusMatches: RDD[(Int, List[Int])] = null
-        if ( guts._1 != null) {
-            fGraph.addUndirectedEdge(guts._1.x, guts._1.y, guts._1.edgeLabel)
-
-            // build the matches by growing matches of the parent
-            val parentMatchesMapRDD = matches.filter( kv => guts._4.contains(kv._1))
-            gPlusMatches = growMatches(sRDD, dataGraphsMapRDD, parentMatchesMapRDD, guts._1)
-            gPlusMatches.persist()
-        }
-        
-        new DGTreeNode(fGraph, guts._1, guts._2, sRDD, sStarRDD, gPlusMatches)
-    }
-*/
-    /** Grows the tree rooted at this node */
 
 /*
     def treeGrow(dataGraphsMapRDD: RDD[(Int, Graph)]): Unit = {
@@ -579,15 +562,6 @@ class DGTreeNode (
 */
     /** Score for the current node */ 
 /*
-    def updateScore() = {
-        val BIAS_SCORE = 100000
-        val exclusivelyCoveredDatagraphs = SStar.count() 
-        val coveredDatagraphs = S.count() 
-        val avgMatches: Double = matchesSize / coveredDatagraphs 
-        val score: Double  = exclusivelyCoveredDatagraphs / avgMatches
-        this.score = if (edgeType == 0) score + BIAS_SCORE else score
-
-    } 
 
     override def toString = {
             val growEdge = "\n Grow Edge: " + this.growEdge.toString  + "\n"
