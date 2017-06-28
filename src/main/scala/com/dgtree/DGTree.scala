@@ -54,7 +54,8 @@ class DGTree(
 
         val toCover = dataGraphsMapRDD.keys.map(("dummy", _))
                                       .groupByKey()
-                                      .mapValues(_.toSet) 
+                                      .mapValues(ids => (ids.toSet, new Graph(0, 1, 0, Array("dummy")))) 
+
         val sievedFirstLevel = sieveChildren(firstLevelNodesRDD.join(toCover))
         sievedFirstLevel.persist(StorageLevel.MEMORY_AND_DISK)
 
@@ -246,32 +247,48 @@ class DGTree(
 
     }
 
-    def sieveChildren(nodePQueueRDD: RDD[(String, (PriorityQueue[DGTreeNode], Set[Int]))]): RDD[DGTreeNode] = {
+    def sieveChildren(nodePQueueRDD: RDD[(String, (PriorityQueue[DGTreeNode], (Set[Int], Graph)))]): RDD[DGTreeNode] = {
 
         nodePQueueRDD.flatMap(kv => {
+                val parentID = kv._1
                 val pQueueAndSStar = kv._2
                 val pQueue = pQueueAndSStar._1
-                var C = pQueueAndSStar._2
+                var C = pQueueAndSStar._2._1
+                var parentFGraph = pQueueAndSStar._2._2
 
                 //println("to be covered graph size " + C.size)
                 val sievedChildren = new ArrayBuffer[DGTreeNode]()
 
                 while (!C.isEmpty) {
                     //println(C.size)
-                    var bestChildNode = pQueue.dequeue
 
-                    while (! bestChildNode.SStar.subsetOf(C)) {
+                    var bestChildNode:DGTreeNode = null
 
-                        // Lazy update the SStar to be consistent with uncovered Datagraphs in C
-                        bestChildNode.SStar = bestChildNode.SStar.intersect(C)
+                    if (!pQueue.isEmpty) {
 
-                        if (!bestChildNode.SStar.isEmpty) {
-                            // update the score of the node and add it back to the Priority Queue
-                            bestChildNode.calcScore(BIAS_SCORE)
-                            pQueue += bestChildNode
+                        bestChildNode = pQueue.dequeue
+
+                        while (! bestChildNode.SStar.subsetOf(C)) {
+
+                            // Lazy update the SStar to be consistent with uncovered Datagraphs in C
+                            bestChildNode.SStar = bestChildNode.SStar.intersect(C)
+
+                            if (!bestChildNode.SStar.isEmpty) {
+                                // update the score of the node and add it back to the Priority Queue
+                                bestChildNode.calcScore(BIAS_SCORE)
+                                pQueue += bestChildNode
+                            }
+
+                            bestChildNode = pQueue.dequeue 
                         }
+                    }
+                    else {
+                        // Priority Queue is empty implying that the datagraph to be covered is a 
+                        // subset of some other datagraph therefore we need to use a null grow edge
+                        println("NULL GROW EDGE DETECTED : Size of C is " + C.size) 
 
-                        bestChildNode = pQueue.dequeue 
+                        bestChildNode = new DGTreeNode (parentID, parentFGraph, null, 0, C, C, null) 
+                    
                     }
 
                     // add the chosen childnode to the final list of children
@@ -300,7 +317,7 @@ class DGTree(
          * its candidate children in a priority queue and the SStar of the parent 
          */
 
-        val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, node.SStar))
+        val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, (node.SStar, node.fGraph)))
         //println("parent SStar Map Count "+ parentSStarMapRDD.count)
         //println("sstart join  keys")
         //parentSStarMapRDD.keys.collect().foreach(println)
