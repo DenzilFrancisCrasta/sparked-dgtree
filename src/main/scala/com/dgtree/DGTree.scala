@@ -26,7 +26,7 @@ class DGTree(
 
         val distinctNodeGutsRDD = dataGraphsMapRDD.values.flatMap( g => {
             for (i <- 0 until g.vertexLabels.size) 
-                yield (g.vertexLabels(i),(g.id, List(i))) 
+                yield (g.vertexLabels(i),(g.id, new ArrayBuffer[Int](i))) 
         }).groupByKey()
 
         val firstLevelNodesRDD = distinctNodeGutsRDD.map( nodeAndGuts => {
@@ -369,7 +369,7 @@ class DGTreeNode (
     var edgeType: Int,
     var S: Set[Int],
     var SStar: Set[Int],
-    var matches: Map[Int, List[List[Int]]], 
+    var matches: Map[Int, List[ArrayBuffer[Int]]], 
     var score: Double = 0.0,
     var matchesSize: Double = 0.0,
     var children: ArrayBuffer[DGTreeNode] = ArrayBuffer[DGTreeNode]()
