@@ -7,7 +7,7 @@ import org.apache.spark.storage.StorageLevel
 
 class DGTree(
     dataGraphsMapRDD: RDD[(Int, Graph)]
-    ) extends java.io.Serializable {
+    ) {
 
     type PhaseOneGuts = RDD[((Edge, String), (Edge, String, Int,  Set[Int], Graph))] 
     type PhaseTwoGuts = RDD[((Edge, String), (Set[Int], ArrayBuffer[(Int, List[Int])]))] 
@@ -21,6 +21,8 @@ class DGTree(
    
     /** Bootstrap the tree index building process */
     def bootstrap() = {
+        
+        val BIAS_SCORE = this.BIAS_SCORE
 
         val distinctNodeGutsRDD = dataGraphsMapRDD.values.flatMap( g => {
             for (i <- 0 until g.vertexLabels.size) 
@@ -80,6 +82,8 @@ class DGTree(
 
     def growPhaseOneGuts( graphMatchesRDD: DataGraphMatches): PhaseOneGuts = {
 
+        val BIAS_SCORE = this.BIAS_SCORE
+
         graphMatchesRDD.flatMap(graphAndMatches => {
 
            val parentId = graphAndMatches._2._1._1
@@ -128,6 +132,8 @@ class DGTree(
 
     def growPhaseTwoGuts( graphMatchesRDD: DataGraphMatches): PhaseTwoGuts = {
 
+        val BIAS_SCORE = this.BIAS_SCORE
+
         graphMatchesRDD.flatMap(graphAndMatches => {
 
            val parentId = graphAndMatches._2._1._1
@@ -175,6 +181,8 @@ class DGTree(
     }
 
     def makeNodesFromGuts( gutsRDD: MergedGuts): RDD[(String, DGTreeNode)] = {
+
+        val BIAS_SCORE = this.BIAS_SCORE
     
         val nodesMapRDD = gutsRDD.mapValues( guts => {
             val growEdge = guts._1._1
@@ -218,6 +226,7 @@ class DGTree(
 
     def candidateFeatures(levelRDD: RDD[DGTreeNode]): RDD[(String, PriorityQueue[DGTreeNode])] = {
 
+
         val phaseOneFilteredMatches = getfilteredMatches(levelRDD, 1)
         val phaseOneIterableRDD = phaseOneFilteredMatches.join( dataGraphsMapRDD) 
 
@@ -248,6 +257,8 @@ class DGTree(
     }
 
     def sieveChildren(nodePQueueRDD: RDD[(String, (PriorityQueue[DGTreeNode], (Set[Int], Graph)))]): RDD[DGTreeNode] = {
+
+        val BIAS_SCORE = this.BIAS_SCORE
 
         nodePQueueRDD.flatMap(kv => {
                 val parentID = kv._1
@@ -333,7 +344,6 @@ class DGTree(
     }
 
 }
-
 
 
 /** A node in the DGTree Index 

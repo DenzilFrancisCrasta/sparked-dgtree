@@ -23,6 +23,7 @@ object DGTreeApp {
         // Initialize spark context
         val conf = new SparkConf().setAppName(APPNAME)
         conf.set("spark.scheduler.mode", "FAIR")
+        conf.registerKryoClasses(Array(classOf[DGTreeNode], classOf[Edge], classOf[Graph]))
         val sc   = new SparkContext(conf)
 
         Logger.getRootLogger().setLevel(Level.ERROR)
@@ -51,9 +52,6 @@ object DGTreeApp {
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.bootstrap()
         dgTree.growNextLevel()
-
-
-
 
 
 
