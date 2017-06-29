@@ -302,6 +302,11 @@ class DGTree(
                     
                     }
 
+
+
+                    if (bestChildNode.SStar.size == 1) 
+                        bestChildNode.S = bestChildNode.SStar
+
                     // add the chosen childnode to the final list of children
                     sievedChildren += bestChildNode
                     C = C.diff(bestChildNode.SStar)
