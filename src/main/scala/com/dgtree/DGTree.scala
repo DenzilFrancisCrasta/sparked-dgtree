@@ -71,10 +71,16 @@ class DGTree(
                           ): GraphMatches = {
 
         levelRDD.flatMap( node => {
+
             // determine to filter by S set or SStar set 
             val filterMaster = if (filterBy == 0) node.S else node.SStar
-            node.matches.filter(aMatch => filterMaster.contains(aMatch._1))
-                        .map( graphIdAndMatches => (graphIdAndMatches._1, (node.nUUID,  graphIdAndMatches._2, node.fGraph))) 
+
+            if (filterMaster.size > 1) {
+                node.matches.filter(aMatch => filterMaster.contains(aMatch._1))
+                            .map( graphIdAndMatches => (graphIdAndMatches._1, (node.nUUID,  graphIdAndMatches._2, node.fGraph))) 
+            }
+            else
+                Array[(Int, (String, List[List[Int]], Graph))]()
         })
     
     } 
@@ -290,7 +296,10 @@ class DGTree(
                                 pQueue += bestChildNode
                             }
 
-                            bestChildNode = pQueue.dequeue 
+                            if (!pQueue.isEmpty)
+                                bestChildNode = pQueue.dequeue 
+                            else 
+                                bestChildNode = new DGTreeNode (parentID, parentFGraph, null, 0, C, C, null) 
                         }
                     }
                     else {
@@ -317,34 +326,30 @@ class DGTree(
     
     }
 
-    def growNextLevel() = {
+    def treeGrow() = {
 
-        println("Number of Levels Generated :" + levels.size)
+        var lastLevelRDD = levels(levels.size -1)
 
-        val lastLevelRDD = levels(levels.size -1)
+        // if all nodes in the last level are leaf nodes then stop
+        while ( ! lastLevelRDD.filter(_.SStar.size > 1).isEmpty ) {
 
+            println("Generating Level :" + levels.size)
 
-        val candidateMapRDD = candidateFeatures(lastLevelRDD)
+            val candidateMapRDD = candidateFeatures(lastLevelRDD)
 
-        println("candidate keys")
-        //candidateMapRDD.keys.collect().foreach(println)
+            val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, (node.SStar, node.fGraph)))
 
-        /* create a MapRDD with key as parent node id and value as a tuple of 
-         * its candidate children in a priority queue and the SStar of the parent 
-         */
-
-        val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, (node.SStar, node.fGraph)))
-        //println("parent SStar Map Count "+ parentSStarMapRDD.count)
-        //println("sstart join  keys")
-        //parentSStarMapRDD.keys.collect().foreach(println)
-
-        val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
+            val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
 
 
-        //println("After joining with SStar" + candidateChildrenRDD.count)
-        levels += sieveChildren( candidateChildrenRDD )
+            //println("After joining with SStar" + candidateChildrenRDD.count)
+            levels += sieveChildren( candidateChildrenRDD )
 
-        println("Added sieved children level count" + levels(levels.size-1).count)
+            println("sieved children count" + levels(levels.size-1).count)
+            
+            lastLevelRDD = levels(levels.size -1)
+        }
+
 
     }
 

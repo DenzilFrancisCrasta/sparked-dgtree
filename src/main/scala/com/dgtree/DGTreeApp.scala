@@ -51,7 +51,7 @@ object DGTreeApp {
         // bootstrap the tree index 
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.bootstrap()
-        dgTree.growNextLevel()
+        dgTree.treeGrow()
 
 
 
