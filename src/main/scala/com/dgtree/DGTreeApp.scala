@@ -24,8 +24,8 @@ object DGTreeApp {
         // Initialize spark context
         val conf = new SparkConf().setAppName(APPNAME)
         conf.set("spark.scheduler.mode", "FAIR")
-        conf.set("spark.driver.memory", "6g")
-        conf.set("spark.executor.memory", "6g")
+        //conf.set("spark.driver.memory", "6g")
+        //conf.set("spark.executor.memory", "6g")
         conf.registerKryoClasses(Array(classOf[DGTreeNode], classOf[Edge], classOf[Graph]))
         val sc   = new SparkContext(conf)
 

@@ -360,43 +360,19 @@ class DGTree(
             println("leaf nodes :" + (levels(levels.size-1).count - lastLevelRDD.count))
             print(" non leaf nodes " + lastLevelRDD.count)
 
-            if (levels.size == 8 ) {
-                lastLevelRDD.foreach(println)
-            
-            }
             val candidateMapRDD = candidateFeatures(lastLevelRDD)
-            if (levels.size == 8 ) {
-                candidateMapRDD.foreach(kv => println("parent id "+ kv._1 +" : candidates size "+ kv._2.size))
-                val a = candidateMapRDD.take(1)(0)._2
-
-                println("\n\nPRINTING CANDIDATE CHILDREN \n")
-                
-                a.foreach(println)
-                println("\n\nEND  CANDIDATE CHILDREN \n")
-
-            }
 
             val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, (node.SStar, node.fGraph)))
-            if (levels.size == 8 ) {
-                parentSStarMapRDD.foreach(kv => println("parent id "+ kv._1 +" : parent star "+ kv._2._1.mkString(",")))
-            }
 
             val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
-            if (levels.size == 8 ) {
-                candidateChildrenRDD.foreach(kv => println("after merging with sstar parent id "+ kv._1 +" : candidates size "+ kv._2._1.size +" : parent star "+ kv._2._2._1.mkString(",") ))
-            }
 
 
             val sievedChildren = sieveChildren( candidateChildrenRDD )
-            if (levels.size == 8 ) {
-                sievedChildren.foreach(println)
-            
-            }
+
             levels += sievedChildren 
 
             println(" sieved children count " + sievedChildren.count)
             
-
             lastLevelRDD = levels(levels.size -1).filter(node => node.SStar.size > 1 && node.growEdge != null)
 
         }
