@@ -5,6 +5,6 @@ time spark-submit --master local[8] \
                   --executor-memory 6g \
                   --driver-memory 6g \
                   target/scala-2.11/sparked-dgtree_2.11-1.0.jar \
-                  datasets/dataset.txt \
-                  datasets/queries/query.txt \
+                  datasets/10000dataset.txt \
+                  /tmp \
 

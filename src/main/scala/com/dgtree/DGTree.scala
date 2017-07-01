@@ -82,7 +82,17 @@ class DGTree(
         println("First level count " + sievedFirstLevel.count)
         levels.append(sievedFirstLevel)
 
-    } 
+    }
+
+    def saveDGTreetoFile(savePath: String) {
+        var i = 0
+        levels.foreach(nodeRDD => {
+            nodeRDD.map(n => {n.matches=null
+                n       
+            }).saveAsObjectFile(savePath+"/"+"level"+"_"+i)
+            i+=1
+        }) 
+    }
 
     def getfilteredMatches(levelRDD: RDD[DGTreeNode],
                            filterBy: Int
@@ -375,8 +385,8 @@ class DGTree(
             
             lastLevelRDD = levels(levels.size -1).filter(node => node.SStar.size > 1 && node.growEdge != null)
 
-        }
-
+       }
+       
 
     }
 

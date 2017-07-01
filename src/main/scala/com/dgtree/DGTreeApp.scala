@@ -55,57 +55,8 @@ object DGTreeApp {
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.bootstrap()
         dgTree.treeGrow()
-
-
-
-        //dataGraphsRDD.collect().foreach( g => g.render(g.id.toString, "images"))
-       
-        //val dgtree = DGTreeConstruct(dataGraphsRDD) 
-
-        //println("DGTree Root Children Count : " + dgtree.children.size)
-        /*
-        dgtree.children.foreach(gr => {
-                   gr.fGraph.printVertices() 
-                   print("Support :") 
-                   gr.S.collect().foreach( (s:Int) => print(s +" "))
-                   println("")
-
-                   println("Matches")
-                   gr.matches.groupByKey().collect().foreach(t => {
-                             print("M(g.id="+ t._1 + ") :")
-                             t._2.foreach((s:List[Int]) => print(s.mkString(",") + " "))
-                             println("") 
-                           })
-                   println("")
-                   println("")
-                } )
-
-        println("Raw Graph String")
-        println(graphData.take(2)(1))
-
-        println("Total Datagraphs Parsed " + dataGraphsRDD.count())
-        println("A sample Datagraph")
-        println(dataGraphsRDD.take(2)(1))
-        */
-        
-        /*
-
-        val queryFile   = args(1)
-        val queryGraphStrings = sc.newAPIHadoopFile(queryFile,
-                                            classOf[TextInputFormat], 
-                                            classOf[LongWritable], 
-                                            classOf[Text], 
-                                            textFormatConf).map(_._2.toString)
-        val queryGraphs = queryGraphStrings.map(DGTreeApp.makeGraph).filter(_.id != -1)
-
-        val queryTree = new QueryTree(dgtree, dataGraphsRDD)
-        */
-        //val results = queryGraphs.collect().par.map( Q => queryTree.superGraphSearch(Q))
-
-
-        //val i = readInt()
-        
-
+        val savePath = args(1)
+        dgTree.saveDGTreetoFile(savePath)
         sc.stop()
     }
 }
