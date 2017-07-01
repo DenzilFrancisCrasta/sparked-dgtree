@@ -18,6 +18,22 @@ object DGTreeApp {
     val APPNAME = "Distributed DGTree Application"
     val GRAPH_DELIMITTER = "#"
     val INVALID_GRAPH_ID = -1
+    var sc : SparkContext = null
+    
+
+    def loadDGTreeFromFile(savePath : String,levelCount : Int) : ArrayBuffer[RDD[DGTreeNode]]  = {
+        val levels = new ArrayBuffer[RDD[DGTreeNode]]()
+        for(i <- 0 to levelCount-1) {
+            levels += sc.objectFile[DGTreeNode](savePath+"/level_"+i)
+        }
+        var i = 0
+        levels.foreach(nodeRDD =>  {
+              println("level_"+i+":  "+nodeRDD.count()+" nodes")
+              println("First Node : "+nodeRDD.take(1)(0).fGraph)
+              i+=1
+        })
+        levels
+    }
 
     def main(args : Array[String]) {  
 
@@ -27,7 +43,7 @@ object DGTreeApp {
         //conf.set("spark.driver.memory", "6g")
         //conf.set("spark.executor.memory", "6g")
         conf.registerKryoClasses(Array(classOf[DGTreeNode], classOf[Edge], classOf[Graph]))
-        val sc   = new SparkContext(conf)
+        sc   = new SparkContext(conf)
 
         Logger.getRootLogger().setLevel(Level.ERROR)
 
@@ -57,6 +73,9 @@ object DGTreeApp {
         dgTree.treeGrow()
         val savePath = args(1)
         dgTree.saveDGTreetoFile(savePath)
+        //loading and verification of save data
+        val levelCount: Int = dgTree.levels.size
+        val levels : ArrayBuffer[RDD[DGTreeNode]] = loadDGTreeFromFile(savePath,levelCount)
         sc.stop()
     }
 }
