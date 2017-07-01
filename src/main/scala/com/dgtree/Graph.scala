@@ -56,7 +56,9 @@ class Graph(val id: Int,
 
     /** creates a string representation of the adjacency matrix */
     override def toString =  { 
-        adjacencyList.map( _.map( e => e._1.toString + "[" + e._2.toString +"]").mkString(" ")).mkString("\n") 
+        val adjacencyListString = adjacencyList.map( _.map( e => e._1.toString + "[" + e._2.toString +"]").mkString(" ")).mkString("\n") 
+        val vertexLabelString = vertexLabels.mkString(",")
+        vertexLabelString + "\n" + adjacencyListString
     }
 
     /** renders the graph using graphviz library */

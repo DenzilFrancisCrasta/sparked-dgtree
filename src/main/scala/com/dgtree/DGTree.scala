@@ -2,24 +2,41 @@ package com.dgtree;
 
 import org.apache.spark.rdd.RDD
 import scala.collection.mutable.{ArrayBuffer, PriorityQueue}
-import scala.collection.mutable.ArrayBuffer 
 import org.apache.spark.storage.StorageLevel
 
+/** Tree-Index for fast supergraph search 
+ *
+ *  Nodes in each level of the tree index stored in RDDs with parent ids pointing to the parent
+ *  Tree is built iteratively level by level starting from a bootstrapped layer of single node feature graphs 
+ *  until all feature graphs grow to represent each datagraph as a leaf node
+ *
+ *  @param dataGraphsMapRDD PairRDD of datagraphs in the database with graph-id as the key
+ */
 class DGTree(
     dataGraphsMapRDD: RDD[(Int, Graph)]
     ) {
 
+    // useful type definitions 
     type PhaseOneGuts = RDD[((Edge, String), (Edge, String, Int,  Set[Int], Graph))] 
     type PhaseTwoGuts = RDD[((Edge, String), (Set[Int], ArrayBuffer[(Int, List[Int])]))] 
     type GraphMatches = RDD[(Int, (String, List[List[Int]], Graph))]
     type DataGraphMatches = RDD[(Int, ((String, List[List[Int]], Graph), Graph))]
     type MergedGuts = RDD[((Edge, String), ((Edge, String, Int,  Set[Int], Graph),  (Set[Int], ArrayBuffer[(Int, List[Int])])))]
 
+    // Bias score for closed grow-edges
     val BIAS_SCORE = dataGraphsMapRDD.count()
 
     val levels = new ArrayBuffer[RDD[DGTreeNode]]()
    
-    /** Bootstrap the tree index building process */
+    /** Bootstrap the tree index building process 
+     *   
+     *  Builds the first level nodes which have a single nodes 
+     *  as a feature-graph. These single nodes are all distinct nodes in the 
+     *  graph database. 
+     * 
+     *  The distinct single nodes are then sieved to find a subset that covers all
+     *  data-graphs in the database.
+     */
     def bootstrap() = {
         
         val BIAS_SCORE = this.BIAS_SCORE
@@ -37,12 +54,13 @@ class DGTree(
             val fGraph = new Graph(0, 1, 0, Array(nodeLabel))
 
             // List of the graph id's which contain nodeLabel traditionally called support
+            val growEdge = new Edge(0, 0, "", "", 0)
             val support = nodeAndGuts._2.map(_._1).toSet
             val matchesSize = nodeAndGuts._2.size
             val matches = nodeAndGuts._2.groupBy(kv => kv._1).mapValues(_.map(_._2).toList).map(identity)  
 
             // Add the DGTreeNode to the list of rootNodes being constructed
-            val newNode = new DGTreeNode(null, fGraph, null, 0, support, support, matches, 0, matchesSize)
+            val newNode = new DGTreeNode(null, fGraph, growEdge, 0, support, support, matches, 0, matchesSize)
             newNode.calcScore(BIAS_SCORE)
             //println(newNode.nUUID)
             ("dummy", newNode)
@@ -75,12 +93,8 @@ class DGTree(
             // determine to filter by S set or SStar set 
             val filterMaster = if (filterBy == 0) node.S else node.SStar
 
-            if (filterMaster.size > 1) {
                 node.matches.filter(aMatch => filterMaster.contains(aMatch._1))
                             .map( graphIdAndMatches => (graphIdAndMatches._1, (node.nUUID,  graphIdAndMatches._2, node.fGraph))) 
-            }
-            else
-                Array[(Int, (String, List[List[Int]], Graph))]()
         })
     
     } 
@@ -202,6 +216,7 @@ class DGTree(
             //  https://issues.scala-lang.org/browse/SI-7005 Map#mapValues is not serializable 
             //  therefore we need to use map(identity)
             val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
+
                     
             // calculate score for the candidate 
             val exclusivelyCoveredDatagraphs = sStarSet.size 
@@ -219,10 +234,16 @@ class DGTree(
                 val index = fGraph.vertexCount-1
                 fGraph.vertexLabels(index) = growEdge.yLabel 
                 fGraph.adjacencyList(index) = Nil 
-                fGraph.addUndirectedEdge(growEdge.x, growEdge.y, growEdge.edgeLabel)
             }
+            if (growEdge != null)
+                fGraph.addUndirectedEdge(growEdge.x, growEdge.y, growEdge.edgeLabel)
 
-            new DGTreeNode(parentId, fGraph, growEdge, edgeType, sSet, sStarSet, matches, finalScore, matchesSize)
+            val newNode = new DGTreeNode(parentId, fGraph, growEdge, edgeType, sSet, sStarSet, matches, finalScore, matchesSize)
+
+           // if (matches.size == 1) 
+            //   println("MATCHES SIZE 1 " + newNode)
+
+            newNode
         })
 
         // remap to make the key as parentId instead of the (growEdge, ParentID) tuple
@@ -277,7 +298,7 @@ class DGTree(
                 val sievedChildren = new ArrayBuffer[DGTreeNode]()
 
                 while (!C.isEmpty) {
-                    //println(C.size)
+                    //print(C.size + " ")
 
                     var bestChildNode:DGTreeNode = null
 
@@ -298,14 +319,15 @@ class DGTree(
 
                             if (!pQueue.isEmpty)
                                 bestChildNode = pQueue.dequeue 
-                            else 
+                            else {
                                 bestChildNode = new DGTreeNode (parentID, parentFGraph, null, 0, C, C, null) 
+                            }
                         }
                     }
                     else {
                         // Priority Queue is empty implying that the datagraph to be covered is a 
                         // subset of some other datagraph therefore we need to use a null grow edge
-                        println("NULL GROW EDGE DETECTED : Size of C is " + C.size) 
+                        //println("NULL GROW EDGE DETECTED : Size of C is " + C.size) 
 
                         bestChildNode = new DGTreeNode (parentID, parentFGraph, null, 0, C, C, null) 
                     
@@ -328,26 +350,55 @@ class DGTree(
 
     def treeGrow() = {
 
-        var lastLevelRDD = levels(levels.size -1)
+        var lastLevelRDD = levels(levels.size -1).filter( node => node.SStar.size > 1 && node.growEdge != null)
+
 
         // if all nodes in the last level are leaf nodes then stop
-        while ( ! lastLevelRDD.filter(_.SStar.size > 1).isEmpty ) {
+        while ( ! lastLevelRDD.isEmpty ) {
 
-            println("Generating Level :" + levels.size)
+            print("Generating Level :" + levels.size)
+            println("leaf nodes :" + (levels(levels.size-1).count - lastLevelRDD.count))
+            print(" non leaf nodes " + lastLevelRDD.count)
 
+            if (levels.size == 8 ) {
+                lastLevelRDD.foreach(println)
+            
+            }
             val candidateMapRDD = candidateFeatures(lastLevelRDD)
+            if (levels.size == 8 ) {
+                candidateMapRDD.foreach(kv => println("parent id "+ kv._1 +" : candidates size "+ kv._2.size))
+                val a = candidateMapRDD.take(1)(0)._2
+
+                println("\n\nPRINTING CANDIDATE CHILDREN \n")
+                
+                a.foreach(println)
+                println("\n\nEND  CANDIDATE CHILDREN \n")
+
+            }
 
             val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, (node.SStar, node.fGraph)))
+            if (levels.size == 8 ) {
+                parentSStarMapRDD.foreach(kv => println("parent id "+ kv._1 +" : parent star "+ kv._2._1.mkString(",")))
+            }
 
             val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
+            if (levels.size == 8 ) {
+                candidateChildrenRDD.foreach(kv => println("after merging with sstar parent id "+ kv._1 +" : candidates size "+ kv._2._1.size +" : parent star "+ kv._2._2._1.mkString(",") ))
+            }
 
 
-            //println("After joining with SStar" + candidateChildrenRDD.count)
-            levels += sieveChildren( candidateChildrenRDD )
-
-            println("sieved children count" + levels(levels.size-1).count)
+            val sievedChildren = sieveChildren( candidateChildrenRDD )
+            if (levels.size == 8 ) {
+                sievedChildren.foreach(println)
             
-            lastLevelRDD = levels(levels.size -1)
+            }
+            levels += sievedChildren 
+
+            println(" sieved children count " + sievedChildren.count)
+            
+
+            lastLevelRDD = levels(levels.size -1).filter(node => node.SStar.size > 1 && node.growEdge != null)
+
         }
 
 
@@ -356,271 +407,3 @@ class DGTree(
 }
 
 
-/** A node in the DGTree Index 
- *
- *  @param parentUUID parents unique id 
- *  @param fGraph   the feature graph
- *  @param growEdge edge which is used to grow the feature graph of
- *                  the current node from its parent feature graph
- *  @param edgeType type of the grow edge one of {OPEN, CLOSED}
- *  @param S        support of the feature graph i.e set of datagraphs
- *                  which contain this feature graph in them 
- *  @param SStar    temporary for growing the support S
- *  @param matches  key-value RDD from graph-ids in the support to the list 
- *                  of matches of the feature graph in the graph 
- *  @param children children of the current node in the tree index
- *  @param score    an ordering key for DGTree nodes
- *  @param matchesSize total number of matches of fGrpah across graphs in S  
- */
-class DGTreeNode (
-    val parentUID: String, 
-    var fGraph: Graph,
-    var growEdge: Edge,
-    var edgeType: Int,
-    var S: Set[Int],
-    var SStar: Set[Int],
-    var matches: Map[Int, List[List[Int]]], 
-    var score: Double = 0.0,
-    var matchesSize: Double = 0.0,
-    var children: ArrayBuffer[DGTreeNode] = ArrayBuffer[DGTreeNode]()
-) extends java.io.Serializable with Ordered[DGTreeNode]{ 
-
-    val nUUID = java.util.UUID.randomUUID.toString
-
-    def compare(that: DGTreeNode): Int = this.score.compareTo(that.score)
-
-    def calcScore(BIAS_SCORE: Double) = {
-        val exclusivelyCoveredDatagraphs = SStar.size.toDouble
-        val coveredDatagraphs = S.size.toDouble 
-        val avgMatches  = matchesSize / coveredDatagraphs 
-        val score  = exclusivelyCoveredDatagraphs / avgMatches
-        this.score = if (edgeType == 0) score + BIAS_SCORE else score
-    } 
-}
-
-
-/*
-    def treeGrow(dataGraphsMapRDD: RDD[(Int, Graph)]): Unit = {
-
-        var gutsMapRDD = candidateFeatures(dataGraphsMapRDD).persist()
-        var C = this.SStar.collect().toSet
-
-        val childQueue = new ArrayBuffer[DGTreeNode]()
-
-        while (!C.isEmpty) {
-
-            val bestFeatureTuple = bestFeature(C, gutsMapRDD) 
-            val gPlusGuts = bestFeatureTuple._1 
-            gutsMapRDD = bestFeatureTuple._2
-            val gPlus = makeNodeFromGuts(gPlusGuts, dataGraphsMapRDD) 
-
-            if (gPlusGuts._3.size > 1) {
-               childQueue.append(gPlus)
-            }
-            else {
-                    val graphId = gPlusGuts._3.head
-                    //println("graph id in leaf " + graphId)
-                    //gPlus.fGraph = dataGraphsMapRDD.filter(kv => kv._1 == graphId).values.collect()(0) 
-                    gPlus.S = gPlus.SStar
-            }
-
-            if (!gPlusGuts._3.isEmpty) 
-               children.append(gPlus) 
-
-            //println(gPlus)
-            //gPlus.fGraph.render(this.hashCode.toString, "./images")
-
-            //println("Before child is chosen C = " + C.size)
-            C = C diff gPlusGuts._3 
-            //println("After child is chosen C  = " + C.size)
-
-        }
-
-        gutsMapRDD.unpersist()
-        childQueue.par.foreach(_.treeGrow(dataGraphsMapRDD))
-
-        // discard RDDs which wont be used beyond this point
-        this.SStar.unpersist()
-        this.matches.unpersist()
-
-    }
-*/
-    /** Best candidate child node which has the highest score 
-     */
-/*
-    def bestFeature(C: Set[Int], 
-                    candidateGutsMapRDD: RDD[(Edge, (Edge, Int, Set[Int], Set[Int], Double, Double))] 
-                   ): ((Edge, Int, Set[Int], Set[Int], Double, Double),RDD[(Edge, (Edge, Int, Set[Int], Set[Int], Double, Double))]) = {
-
-        val prunedGutsMapRDD = candidateGutsMapRDD.mapValues(guts => {
-
-                      val prunedSStar = guts._3.intersect(C)
-                      // calculate score for the candidate 
-                      val BIAS_SCORE = 100000
-                      val exclusivelyCoveredDatagraphs = prunedSStar.size 
-                      val coveredDatagraphs = guts._4.size 
-                      val avgMatches: Double = guts._5.toDouble / coveredDatagraphs.toDouble 
-                      val score: Double  = exclusivelyCoveredDatagraphs.toDouble / avgMatches
-                      val finalScore = if (guts._2 == 0 && score != 0) score + BIAS_SCORE else score
-
-                      (guts._1, guts._2, prunedSStar, guts._4, guts._5, finalScore)
-                })
-
-
-        //println("Before reducing")
-        //C.foreach(print) 
-        //prunedGutsMapRDD.collect().foreach(println)
-
-        var gPlus = prunedGutsMapRDD.values.reduce((g1, g2) => if (g1._6 >= g2._6) g1 else g2)
-
-        // if the score is zero then we have got a datagraph that is a subset of another datagraph.
-        if (gPlus._6 == 0) {
-            // modify the guts to use a NULL grow edge
-            gPlus = (null, 0, C, C, 0.0, 0.0)
-        }
-
-        //println("After reducing")
-        //prunedGutsMapRDD.collect().foreach(println)
-        //val poppedGutsMapRDD = prunedGutsMapRDD.filter(_._1 != gPlus._1)
-        //println("popped guts count " + poppedGutsMapRDD.count())
-        (gPlus, prunedGutsMapRDD)
-    }
-*/
-    /** Candidate child nodes to choose from */ 
-/*
-    def candidateFeatures( dataGraphsMapRDD: RDD[(Int, Graph)]) : RDD[(Edge, (Edge, Int, Set[Int], Set[Int], Double, Double))] =  {
-
-        val supportStarMapRDD = SStar.map(g => (g, g))
-                                    .join(dataGraphsMapRDD)
-                                    .mapValues(kv => kv._2)
-
-
-        val phaseOneCandidateGutsMapRDD = supportStarMapRDD.join(matches).flatMap(kv => {
-
-                // alias the datagraph belonging to the support S
-                val G = kv._2._1 
-
-                // alias the match of fGraph in G  
-                val matchG = kv._2._2
-
-                // for every matched vertex in G 
-                matchG.flatMap(fui => {
-
-                       val neighbours = G.getNeighbours(fui) 
-                       neighbours.map( vertexAndLabel => {
-
-                                   val ui = matchG.indexOf(fui)
-
-                                   val fuj = vertexAndLabel._1 
-                                   val label  = vertexAndLabel._2 
-
-                                   val index    = matchG.indexOf(fuj)
-                                   val edgeType = if (index != -1) 0 else 1
-                                   val uj       = if (index != -1) index else matchG.size
-
-                                   if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
-                                          val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
-                                          (e, (e, edgeType,  Set(G.id))) 
-                                   }     
-                                   else {
-                                          (null, (null, 0, null)) 
-                                   }
-
-                               }).filter(_._1 != null) 
-                       
-                    })
-
-             }).reduceByKey((x, y) => (x._1, x._2, x._3.union(y._3)))
-
-
-
-        val supportMapRDD = S.map(g => (g, g))
-                                    .join(dataGraphsMapRDD)
-                                    .mapValues(kv => kv._2)
-
-
-        val phaseTwoCandidateGutsMapRDD  = supportMapRDD.join(matches).flatMap(kv => {
-
-                // alias the datagraph belonging to the support S
-                val G = kv._2._1 
-
-                // alias the match of fGraph in G  
-                val matchG = kv._2._2
-
-                // for every matched vertex in G 
-                matchG.flatMap(fui => {
-
-                       val neighbours = G.getNeighbours(fui) 
-                       neighbours.map( vertexAndLabel => {
-
-                                   val ui = matchG.indexOf(fui)
-
-                                   val fuj = vertexAndLabel._1 
-                                   val label  = vertexAndLabel._2 
-
-                                   val index    = matchG.indexOf(fuj)
-
-                                   val edgeType = if (index != -1) 0 else 1
-
-                                   val uj       = if (index != -1) index else matchG.size
-
-                                   if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
-                                      
-                                          val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
-                                          val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
-
-                                          (e, ( Set(G.id), 1.0)) 
-                                   }     
-                                   else {
-                                          // a null key-value pair which will be filtered out. 
-                                          (null, ( null, -0.0)) 
-                                   }
-
-                               }).filter(_._1 != null) 
-                       
-                    })
-
-             }).reduceByKey((x, y) => (x._1.union(y._1), x._2 + y._2))
-
-
-        // merge the guts of the candidate DGTree Nodes computed in phase 1 and phase 2
-        val candidateGutsMapRDD = phaseOneCandidateGutsMapRDD.join( phaseTwoCandidateGutsMapRDD)
-
-        candidateGutsMapRDD.mapValues( guts => {
-                    val growEdge = guts._1._1
-                    val edgeType = guts._1._2
-                    val sStarSet = guts._1._3
-                    val sSet = guts._2._1
-                    val matchesSize = guts._2._2
-
-                    // calculate score for the candidate 
-                    val BIAS_SCORE = 100000
-                    val exclusivelyCoveredDatagraphs = sStarSet.size 
-                    val coveredDatagraphs = sSet.size 
-                    val avgMatches: Double = matchesSize.toDouble / coveredDatagraphs.toDouble 
-                    val score: Double  = exclusivelyCoveredDatagraphs.toDouble / avgMatches
-                    val finalScore = if (edgeType == 0) score + BIAS_SCORE else score
-
-                    (growEdge, edgeType, sStarSet, sSet, matchesSize, finalScore)
-                
-                })
-
-    }
-*/
-    /** Score for the current node */ 
-/*
-
-    override def toString = {
-            val growEdge = "\n Grow Edge: " + this.growEdge.toString  + "\n"
-
-            val fGraph = "\n FGraph \n" +  this.fGraph.toString + "\n"
-
-            val matches = "\n Matches \n" 
-            val matches_desription = this.matches.groupByKey().collect().map(t => {
-                                            " M(g.id="+ t._1 + ") :" + t._2.map((s:List[Int]) => s.mkString(",")).mkString(" ")
-                                     }).mkString("\n") + "\n"
-
-            growEdge + fGraph + matches + matches_desription
-
-    }
-    */
