@@ -47,9 +47,10 @@ object DGTreeApp {
 
         Logger.getRootLogger().setLevel(Level.ERROR)
 
-        // Generate RDD of string representations of data-graphs 
         val dataFile   = args(0)
+        val savePath   = args(1)
 
+        // Generate RDD of string representations of data-graphs 
         val textFormatConf = new Configuration()
         textFormatConf.set("textinputformat.record.delimiter", GRAPH_DELIMITTER)
         val graphStringsRDD = sc.newAPIHadoopFile(dataFile, 
@@ -69,13 +70,12 @@ object DGTreeApp {
 
         // bootstrap the tree index 
         val dgTree = new DGTree(dataGraphsMapRDD)
-        dgTree.bootstrap()
         dgTree.treeGrow()
-        val savePath = args(1)
         dgTree.saveDGTreetoFile(savePath)
+
         //loading and verification of save data
-        val levelCount: Int = dgTree.levels.size
-        val levels : ArrayBuffer[RDD[DGTreeNode]] = loadDGTreeFromFile(savePath,levelCount)
+        val levelCount = dgTree.levels.size
+        val levels = loadDGTreeFromFile(savePath,levelCount)
         sc.stop()
     }
 }

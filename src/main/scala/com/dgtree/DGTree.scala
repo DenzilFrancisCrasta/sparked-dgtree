@@ -360,6 +360,8 @@ class DGTree(
 
     def treeGrow() = {
 
+        bootstrap()
+
         var lastLevelRDD = levels(levels.size -1).filter( node => node.SStar.size > 1 && node.growEdge != null)
 
 

@@ -1,10 +1,16 @@
 #!/bin/bash
+
+DATASET_FILE=datasets/10000dataset.txt
+
+# remove previously created serialized levels of the DGTree
+rm -rf /tmp/level_*
+
+# build the dgtree
 time spark-submit --master local[8] \
                   --jars lib/Graphviz4S-1.0-SNAPSHOT.jar \
                   --class com.dgtree.DGTreeApp \
                   --executor-memory 6g \
                   --driver-memory 6g \
                   target/scala-2.11/sparked-dgtree_2.11-1.0.jar \
-                  datasets/10000dataset.txt \
-                  /tmp \
-
+                  $DATASET_FILE \
+                  /tmp 

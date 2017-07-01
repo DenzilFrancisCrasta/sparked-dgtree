@@ -4,6 +4,7 @@
 target/
 images/
 metastore_db/
+logs/
 .nfs*
 *.dat
 *.vim
