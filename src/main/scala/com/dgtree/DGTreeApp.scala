@@ -71,11 +71,11 @@ object DGTreeApp {
         // bootstrap the tree index 
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.treeGrow()
-        dgTree.saveDGTreetoFile(savePath)
+        //dgTree.saveDGTreetoFile(savePath)
 
         //loading and verification of save data
-        val levelCount = dgTree.levels.size
-        val levels = loadDGTreeFromFile(savePath,levelCount)
+       // val levelCount = dgTree.levels.size
+        //val levels = loadDGTreeFromFile(savePath,levelCount)
         sc.stop()
     }
 }

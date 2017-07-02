@@ -17,11 +17,12 @@ class DGTree(
     ) {
 
     // useful type definitions 
-    type PhaseOneGuts = RDD[((Edge, String), (Edge, String, Int,  Set[Int], Graph))] 
-    type PhaseTwoGuts = RDD[((Edge, String), (Set[Int], ArrayBuffer[(Int, List[Int])]))] 
-    type GraphMatches = RDD[(Int, (String, List[List[Int]], Graph))]
-    type DataGraphMatches = RDD[(Int, ((String, List[List[Int]], Graph), Graph))]
-    type MergedGuts = RDD[((Edge, String), ((Edge, String, Int,  Set[Int], Graph),  (Set[Int], ArrayBuffer[(Int, List[Int])])))]
+    type PhaseOneGuts     = RDD[( (Edge, String), (Edge, String, Int,  Set[Int], Graph))] 
+    type PhaseTwoGuts     = RDD[( (Edge, String), (Set[Int], ArrayBuffer[(Int, List[Int])]) )] 
+    type MatchesGuts      = RDD[( (Edge, String), ArrayBuffer[(Int, List[Int])] )] 
+    type GraphMatches     = RDD[( Int, ( String, List[List[Int]], Graph ) )]
+    type DataGraphMatches = RDD[( Int, ( (String, List[List[Int]], Graph), Graph ) )]
+    type MergedGuts       = RDD[((Edge, String), ((Edge, String, Int,  Set[Int], Graph),  (Set[Int], ArrayBuffer[(Int, List[Int])] )))]
 
     // Bias score for closed grow-edges
     val BIAS_SCORE = dataGraphsMapRDD.count()
@@ -190,6 +191,7 @@ class DGTree(
 
                                    if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
                                        val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
+                                       
                                        val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
                                        val nM = new ArrayBuffer[(Int, List[Int])](1)
                                        nM.append((G.id, newMatch))
@@ -210,7 +212,7 @@ class DGTree(
     
     }
 
-    def makeNodesFromGuts( gutsRDD: MergedGuts): RDD[(String, DGTreeNode)] = {
+    def makeNodesFromGuts( gutsRDD: MergedGuts): (RDD[(String, DGTreeNode)], MatchesGuts) = {
 
         val BIAS_SCORE = this.BIAS_SCORE
     
@@ -225,7 +227,8 @@ class DGTree(
 
             //  https://issues.scala-lang.org/browse/SI-7005 Map#mapValues is not serializable 
             //  therefore we need to use map(identity)
-            val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
+            //val matches = guts._2._2.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
+            val matches = guts._2._2
 
                     
             // calculate score for the candidate 
@@ -248,20 +251,23 @@ class DGTree(
             if (growEdge != null)
                 fGraph.addUndirectedEdge(growEdge.x, growEdge.y, growEdge.edgeLabel)
 
-            val newNode = new DGTreeNode(parentId, fGraph, growEdge, edgeType, sSet, sStarSet, matches, finalScore, matchesSize)
+            val newNode = new DGTreeNode(parentId, fGraph, growEdge, edgeType, sSet, sStarSet, null, finalScore, matchesSize)
 
            // if (matches.size == 1) 
             //   println("MATCHES SIZE 1 " + newNode)
 
-            newNode
+            (newNode, matches)
         })
 
+        val matchesRDD = nodesMapRDD.map(kv => (kv._1, kv._2._2))
         // remap to make the key as parentId instead of the (growEdge, ParentID) tuple
-        val nodesPerParentRDD = nodesMapRDD.map(keyAndNode => (keyAndNode._1._2, keyAndNode._2))
-        nodesPerParentRDD
+        val nodesPerParentRDD = nodesMapRDD.map(keyAndNode => (keyAndNode._1._2, keyAndNode._2._1))
+        (nodesPerParentRDD, matchesRDD)
     }
 
-    def candidateFeatures(levelRDD: RDD[DGTreeNode]): RDD[(String, PriorityQueue[DGTreeNode])] = {
+    def candidateFeatures(
+            levelRDD: RDD[DGTreeNode]
+            ):(RDD[(String, PriorityQueue[DGTreeNode])], MatchesGuts) = {
 
 
         val phaseOneFilteredMatches = getfilteredMatches(levelRDD, 1)
@@ -273,12 +279,16 @@ class DGTree(
         //println("Next level Node Phase One guts count " + phaseOneGutsRDD.count())
 
         val phaseTwoIterableRDD = getfilteredMatches(levelRDD, 0).join( dataGraphsMapRDD) 
+        //phaseTwoIterableRDD.persist(StorageLevel.MEMORY_AND_DISK)
+
         val phaseTwoGutsRDD = growPhaseTwoGuts(phaseTwoIterableRDD)
         //println("Next level Node Phase Two guts count " + phaseTwoGutsRDD.count())
 
         val nextLevelGutsRDD = phaseOneGutsRDD.join(phaseTwoGutsRDD)
 
-        val nexLevelNodesRDD = makeNodesFromGuts(nextLevelGutsRDD)
+        val nodesAndMatches = makeNodesFromGuts(nextLevelGutsRDD)
+        val nexLevelNodesRDD = nodesAndMatches._1
+        val matches = nodesAndMatches._2
 
         val nodesPQueueMapRDD = nexLevelNodesRDD.groupBy(_._1)
                                                 .mapValues(stringAndNodes => {
@@ -289,7 +299,7 @@ class DGTree(
 
         //println("Next level Node  guts count " + nodesPQueueMapRDD.count())
 
-        nodesPQueueMapRDD
+        (nodesPQueueMapRDD, matches)
 
     }
 
@@ -358,6 +368,56 @@ class DGTree(
     
     }
 
+    def lazyGrowMatches(graphMatchesRDD: DataGraphMatches): MatchesGuts = {
+
+        val BIAS_SCORE = this.BIAS_SCORE
+
+        graphMatchesRDD.flatMap(graphAndMatches => {
+
+           val parentId = graphAndMatches._2._1._1
+           val matches  = graphAndMatches._2._1._2
+           val fGraph   = graphAndMatches._2._1._3
+           val G        = graphAndMatches._2._2
+
+           matches.flatMap( matchG => { 
+
+                  matchG.flatMap(fui => {
+
+                       val neighbours = G.getNeighbours(fui) 
+
+                       neighbours.map( vertexAndLabel => {
+
+                                   val ui = matchG.indexOf(fui)
+
+                                   val fuj = vertexAndLabel._1 
+                                   val label  = vertexAndLabel._2 
+
+                                   val index    = matchG.indexOf(fuj)
+                                   val edgeType = if (index != -1) 0 else 1
+                                   val uj       = if (index != -1) index else matchG.size
+
+                                   if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
+                                       val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
+                                       
+                                       val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
+                                       val nM = new ArrayBuffer[(Int, List[Int])](1)
+                                       nM.append((G.id, newMatch))
+                                       ((e, parentId), nM) 
+                                   }     
+                                   else {
+                                          ((null, "dummy"), null) 
+                                   }
+
+                       }) 
+                       
+                    })
+
+             })
+
+        }).filter(_._1._1 != null)
+          .reduceByKey((x, y) => x ++= y)
+    }
+
     def treeGrow() = {
 
         bootstrap()
@@ -372,7 +432,10 @@ class DGTree(
             println("leaf nodes :" + (levels(levels.size-1).count - lastLevelRDD.count))
             print(" non leaf nodes " + lastLevelRDD.count)
 
-            val candidateMapRDD = candidateFeatures(lastLevelRDD)
+            val candidatesAndPhaseTwoInput = candidateFeatures(lastLevelRDD)
+            val candidateMapRDD  = candidatesAndPhaseTwoInput._1 
+            val matchesRDD = candidatesAndPhaseTwoInput._2
+            matchesRDD.persist(StorageLevel.MEMORY_AND_DISK)
 
             val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, (node.SStar, node.fGraph)))
 
@@ -381,9 +444,29 @@ class DGTree(
 
             val sievedChildren = sieveChildren( candidateChildrenRDD )
 
-            levels += sievedChildren 
+            val sievedMapChildren = sievedChildren.map(node => ((node.growEdge, node.parentUID), node)) 
 
-            println(" sieved children count " + sievedChildren.count)
+            val sievedAndMatchesMapRDD = sievedMapChildren.leftOuterJoin(matchesRDD)
+            val matchesMergedChildrenRDD = sievedAndMatchesMapRDD.mapValues(nodeAndMatches => {
+
+                    val node     = nodeAndMatches._1
+                    val matches  = nodeAndMatches._2.getOrElse(new ArrayBuffer[(Int, List[Int])])
+
+                    if (node.growEdge != null && node.S.size > 1) {
+                        val restructuredMatches = matches.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
+                        node.matches = restructuredMatches
+                    }
+
+                    node 
+                    
+            }).values 
+
+            matchesMergedChildrenRDD.persist(StorageLevel.MEMORY_AND_DISK)
+
+
+            levels += matchesMergedChildrenRDD 
+
+            println(" sieved children count " + matchesMergedChildrenRDD.count)
             
             lastLevelRDD = levels(levels.size -1).filter(node => node.SStar.size > 1 && node.growEdge != null)
 
