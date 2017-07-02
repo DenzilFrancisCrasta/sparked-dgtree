@@ -401,7 +401,7 @@ class DGTree(
             val matchesMergedChildrenRDD = sievedAndMatchesMapRDD.mapValues(nodeAndMatches => {
 
                     val node     = nodeAndMatches._1
-                    val matches  = nodeAndMatches._2.getOrElse(new ArrayBuffer[(Int, List[Int])])
+                    val matches: ArrayBuffer[(Int, List[Int])]  = nodeAndMatches._2.getOrElse(null)
 
                     if (node.growEdge != null && node.S.size > 1) {
                         val restructuredMatches = matches.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
