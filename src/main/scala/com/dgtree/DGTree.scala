@@ -375,7 +375,6 @@ class DGTree(
 
         var lastLevelRDD = levels(levels.size -1).filter( node => node.SStar.size > 1 && node.growEdge != null)
 
-
         // if all nodes in the last level are leaf nodes then stop
         while ( ! lastLevelRDD.isEmpty ) {
 
@@ -383,39 +382,49 @@ class DGTree(
             println("leaf nodes :" + (levels(levels.size-1).count - lastLevelRDD.count))
             print(" non leaf nodes " + lastLevelRDD.count)
 
-            val candidatesAndPhaseTwoInput = candidateFeatures(lastLevelRDD)
-            val candidateMapRDD  = candidatesAndPhaseTwoInput._1 
-            val matchesRDD = candidatesAndPhaseTwoInput._2
-            matchesRDD.persist(StorageLevel.MEMORY_AND_DISK)
+            // generate candidate children and the matches 
+            val candidatesAndMatches = candidateFeatures(lastLevelRDD)
+            val candidateMapRDD      = candidatesAndMatches._1 
+            val matchesRDD           = candidatesAndMatches._2.persist(StorageLevel.MEMORY_AND_DISK)
 
+            // join the parent's SStar and feature graph with the candidate children 
             val parentSStarMapRDD = lastLevelRDD.map(node => (node.nUUID, (node.SStar, node.fGraph)))
-
             val candidateChildrenRDD = candidateMapRDD.join(parentSStarMapRDD)
 
 
+            // sieve the candidate children and choose best subset of children 
+            // who collectively exhaustively cover the parent's SStar set
             val sievedChildren = sieveChildren( candidateChildrenRDD )
 
+            // prepare to merge the matches into the sieved children
             val sievedMapChildren = sievedChildren.map(node => ((node.growEdge, node.parentUID), node)) 
 
+            // populate the already computed matches for all non leaf nodes amongst the sieved children
             val sievedAndMatchesMapRDD = sievedMapChildren.leftOuterJoin(matchesRDD)
             val matchesMergedChildrenRDD = sievedAndMatchesMapRDD.mapValues(nodeAndMatches => {
-
                     val node     = nodeAndMatches._1
                     val matches: ArrayBuffer[(Int, List[Int])]  = nodeAndMatches._2.getOrElse(null)
-
                     if (node.growEdge != null && node.S.size > 1) {
                         val restructuredMatches = matches.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
                         node.matches = restructuredMatches
                     }
-
                     node 
                     
             }).values 
 
             matchesMergedChildrenRDD.persist(StorageLevel.MEMORY_AND_DISK)
-
-
             levels += matchesMergedChildrenRDD 
+
+            matchesRDD.unpersist()
+
+            val penultimaLevelRDD = levels(levels.size - 2).map(node => {
+                    node.matches = null
+                    node.S = null 
+                    node
+            }).persist(StorageLevel.MEMORY_AND_DISK)
+
+            levels(levels.size - 2).unpersist()
+            levels(levels.size - 2) = penultimaLevelRDD
 
             println(" sieved children count " + matchesMergedChildrenRDD.count)
             
