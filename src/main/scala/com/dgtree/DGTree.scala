@@ -396,24 +396,25 @@ class DGTree(
             // who collectively exhaustively cover the parent's SStar set
             val sievedChildren = sieveChildren( candidateChildrenRDD )
 
-            // prepare to merge the matches into the sieved children
-            val sievedMapChildren = sievedChildren.map(node => ((node.growEdge, node.parentUID), node)) 
+
+            val sievedLeafChildren    = sievedChildren.filter(node => node.S.size == 1 || node.growEdge == null)
+            val sievedNonLeafChildren = sievedChildren.filter(node => node.S.size > 1 && node.growEdge != null)
+
+            // prepare to merge the matches into the non leaf sieved children
+            val sievedMapChildren = sievedNonLeafChildren.map(node => ((node.growEdge, node.parentUID), node)) 
 
             // populate the already computed matches for all non leaf nodes amongst the sieved children
-            val sievedAndMatchesMapRDD = sievedMapChildren.leftOuterJoin(matchesRDD)
+            val sievedAndMatchesMapRDD = sievedMapChildren.join(matchesRDD)
             val matchesMergedChildrenRDD = sievedAndMatchesMapRDD.mapValues(nodeAndMatches => {
                     val node     = nodeAndMatches._1
-                    val matches: ArrayBuffer[(Int, List[Int])]  = nodeAndMatches._2.getOrElse(null)
-                    if (node.growEdge != null && node.S.size > 1) {
-                        val restructuredMatches = matches.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
-                        node.matches = restructuredMatches
-                    }
-                    node 
-                    
+                    node.matches  = nodeAndMatches._2.groupBy(_._1).mapValues(_.map(_._2).toList).map(identity)
+                    node
             }).values 
 
-            matchesMergedChildrenRDD.persist(StorageLevel.MEMORY_AND_DISK)
-            levels += matchesMergedChildrenRDD 
+            val finalChildren = sievedLeafChildren.union(matchesMergedChildrenRDD)
+
+            finalChildren.persist(StorageLevel.MEMORY_AND_DISK)
+            levels += finalChildren 
 
             matchesRDD.unpersist()
 
@@ -426,7 +427,7 @@ class DGTree(
             levels(levels.size - 2).unpersist()
             levels(levels.size - 2) = penultimaLevelRDD
 
-            println(" sieved children count " + matchesMergedChildrenRDD.count)
+            println(" sieved children count " + finalChildren.count)
             
             lastLevelRDD = levels(levels.size -1).filter(node => node.SStar.size > 1 && node.growEdge != null)
 
