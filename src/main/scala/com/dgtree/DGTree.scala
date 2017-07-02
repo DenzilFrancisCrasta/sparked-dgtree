@@ -368,55 +368,6 @@ class DGTree(
     
     }
 
-    def lazyGrowMatches(graphMatchesRDD: DataGraphMatches): MatchesGuts = {
-
-        val BIAS_SCORE = this.BIAS_SCORE
-
-        graphMatchesRDD.flatMap(graphAndMatches => {
-
-           val parentId = graphAndMatches._2._1._1
-           val matches  = graphAndMatches._2._1._2
-           val fGraph   = graphAndMatches._2._1._3
-           val G        = graphAndMatches._2._2
-
-           matches.flatMap( matchG => { 
-
-                  matchG.flatMap(fui => {
-
-                       val neighbours = G.getNeighbours(fui) 
-
-                       neighbours.map( vertexAndLabel => {
-
-                                   val ui = matchG.indexOf(fui)
-
-                                   val fuj = vertexAndLabel._1 
-                                   val label  = vertexAndLabel._2 
-
-                                   val index    = matchG.indexOf(fuj)
-                                   val edgeType = if (index != -1) 0 else 1
-                                   val uj       = if (index != -1) index else matchG.size
-
-                                   if (uj > ui && !fGraph.isAnEdge(ui, uj, label)) {
-                                       val e = new Edge(ui, uj, G.vertexLabels(fui), G.vertexLabels(fuj), label) 
-                                       
-                                       val newMatch = if (edgeType == 0){ matchG} else { matchG :+ fuj }
-                                       val nM = new ArrayBuffer[(Int, List[Int])](1)
-                                       nM.append((G.id, newMatch))
-                                       ((e, parentId), nM) 
-                                   }     
-                                   else {
-                                          ((null, "dummy"), null) 
-                                   }
-
-                       }) 
-                       
-                    })
-
-             })
-
-        }).filter(_._1._1 != null)
-          .reduceByKey((x, y) => x ++= y)
-    }
 
     def treeGrow() = {
 
