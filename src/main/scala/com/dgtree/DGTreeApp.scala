@@ -49,11 +49,18 @@ object DGTreeApp {
 
         val dataFile   = args(0)
         val savePath   = args(1)
+        val queryGraphFile = args(2)
 
         // Generate RDD of string representations of data-graphs 
         val textFormatConf = new Configuration()
         textFormatConf.set("textinputformat.record.delimiter", GRAPH_DELIMITTER)
         val graphStringsRDD = sc.newAPIHadoopFile(dataFile, 
+                                            classOf[TextInputFormat], 
+                                            classOf[LongWritable], 
+                                            classOf[Text], 
+                                            textFormatConf).map(_._2.toString)
+
+        val queryGraphStringRDD = sc.newAPIHadoopFile(queryGraphFile, 
                                             classOf[TextInputFormat], 
                                             classOf[LongWritable], 
                                             classOf[Text], 
@@ -66,12 +73,21 @@ object DGTreeApp {
                                               .map(g => (g.id, g))
                                               .persist(StorageLevel.MEMORY_AND_DISK)
 
+        val queryGraphsMapRDD = queryGraphStringRDD.map(Graph.makeGraph)
+                                              .filter(_.id != INVALID_GRAPH_ID)
+                                              .map(g => (g.id, g))
+                                              .persist(StorageLevel.MEMORY_AND_DISK)
         //println(dataGraphsMapRDD.count())
 
         // bootstrap the tree index 
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.treeGrow()
         //dgTree.saveDGTreetoFile(savePath)
+
+        // Initialize a query processor to process supergraph search queries
+        val processor = new QueryProcessor(dgTree.levels, dataGraphsMapRDD)
+
+        processor.superGraphSearch(queryGraphsMapRDD)
 
         //loading and verification of save data
        // val levelCount = dgTree.levels.size

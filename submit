@@ -1,6 +1,8 @@
 #!/bin/bash
 
-DATASET_FILE=datasets/dataset.txt
+DATASET_FILE=datasets/5000dataset.txt
+QUERY_FILE=datasets/queries/queries.txt
+SAVE_PATH=/tmp
 
 # remove previously created serialized levels of the DGTree
 rm -rf /tmp/level_*
@@ -13,4 +15,6 @@ time spark-submit --master local[8] \
                   --driver-memory 6g \
                   target/scala-2.11/sparked-dgtree_2.11-1.0.jar \
                   $DATASET_FILE \
-                  /tmp 
+                  $SAVE_PATH \
+                  $QUERY_FILE
+
