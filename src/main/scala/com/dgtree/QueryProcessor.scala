@@ -18,10 +18,28 @@ class QueryProcessor (
     def superGraphSearch(queryGraphsMapRDD: RDD[(Int, Graph)]) = {
 
 
-        // each graph in SStar set of root DGTree nodes are candidates 
-        val candidateGraphsRDD = dgTree(0).flatMap(node => node.SStar.map((node.nUUID, _))) 
-        println(candidateGraphsRDD.count)
+        // each graph in SStar of root DGTree nodes are candidate graphs that need to be considered
+        val graphStatsRDD = dataGraphsMapRDD.mapValues(graph => (graph.vertexCount, graph.edgeCount))
+        val candidateGraphIDsRDD = dgTree(0).flatMap(node => node.SStar.map((_, node.nUUID))) 
+        val candidateGraphsRDD = candidateGraphIDsRDD.join(graphStatsRDD) 
 
+        
+
+        //RDD contentes  ((QGrpahID, QGraph), (dGraphId, ( dNode.id, (VCount, ECount))) 
+        val eligibleCandidateGraphsRDD = queryGraphsMapRDD.cartesian(candidateGraphsRDD)
+                                                          .filter(cq => {
+            val QGraph = cq._1._2 
+            val dGraphVertexCount = cq._2._2._2._1
+            val dGraphEdgeCount = cq._2._2._2._2
+            
+            QGraph.vertexCount >= dGraphVertexCount && QGraph.edgeCount >= dGraphEdgeCount
+        
+        })
+
+
+        //println("Queries to be processed " + queryGraphsMapRDD.count)
+        //println("Graph Database Size " + candidateGraphsRDD.count)
+        println("eligibleCandidates " + eligibleCandidateGraphsRDD.count)
 
 
 

@@ -70,7 +70,7 @@ object DGTreeApp {
         // prune out any null invalid graphs from the datagraphsRDD 
         val dataGraphsMapRDD = graphStringsRDD.map(Graph.makeGraph)
                                               .filter(_.id != INVALID_GRAPH_ID)
-                                              .map(g => (g.id, g))
+                                              .keyBy(g => g.id)
                                               .persist(StorageLevel.MEMORY_AND_DISK)
 
         val queryGraphsMapRDD = queryGraphStringRDD.map(Graph.makeGraph)
@@ -83,6 +83,10 @@ object DGTreeApp {
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.treeGrow()
         //dgTree.saveDGTreetoFile(savePath)
+
+        //dgTree.levels.take(2).foreach(_.foreach(_.
+
+
 
         // Initialize a query processor to process supergraph search queries
         val processor = new QueryProcessor(dgTree.levels, dataGraphsMapRDD)
