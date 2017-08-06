@@ -3,7 +3,7 @@
 DATASET_FILE=datasets/paper_dataset.txt
 QUERY_FILE=datasets/queries/paper_query.txt
 SAVE_PATH=/tmp
-RENDER_ENGINE=neato
+RENDER_ENGINE=dot
 
 # remove previously created serialized levels of the DGTree
 rm -rf /tmp/level_*

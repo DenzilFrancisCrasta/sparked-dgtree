@@ -21,27 +21,12 @@ object DGTreeApp {
     var sc : SparkContext = null
     
 
-    def loadDGTreeFromFile(savePath : String,levelCount : Int) : ArrayBuffer[RDD[DGTreeNode]]  = {
-        val levels = new ArrayBuffer[RDD[DGTreeNode]]()
-        for(i <- 0 to levelCount-1) {
-            levels += sc.objectFile[DGTreeNode](savePath+"/level_"+i)
-        }
-        var i = 0
-        levels.foreach(nodeRDD =>  {
-              println("level_"+i+":  "+nodeRDD.count()+" nodes")
-              println("First Node : "+nodeRDD.take(1)(0).fGraph)
-              i+=1
-        })
-        levels
-    }
 
     def main(args : Array[String]) {  
 
         // Initialize spark context
         val conf = new SparkConf().setAppName(APPNAME)
         conf.set("spark.scheduler.mode", "FAIR")
-        //conf.set("spark.driver.memory", "6g")
-        //conf.set("spark.executor.memory", "6g")
         conf.registerKryoClasses(Array(classOf[DGTreeNode], classOf[Edge], classOf[Graph]))
         sc   = new SparkContext(conf)
 
@@ -57,6 +42,7 @@ object DGTreeApp {
         // Generate RDD of string representations of data-graphs 
         val textFormatConf = new Configuration()
         textFormatConf.set("textinputformat.record.delimiter", GRAPH_DELIMITTER)
+
         val graphStringsRDD = sc.newAPIHadoopFile(dataFile, 
                                             classOf[TextInputFormat], 
                                             classOf[LongWritable], 
@@ -82,31 +68,23 @@ object DGTreeApp {
                                               .persist(StorageLevel.MEMORY_AND_DISK)
         //println(dataGraphsMapRDD.count())
 
-        queryGraphsMapRDD.values.zipWithIndex.foreach(gi => gi._1.render("Query_"+gi._2, "images/", renderEngine))
 
-        // bootstrap the tree index 
+        // Build the DGTree Index 
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.treeGrow()
+
         //dgTree.saveDGTreetoFile(savePath)
 
-        dgTree.levels.zipWithIndex.foreach(levelWithIndex => levelWithIndex._1.zipWithIndex.foreach(nodeWithIndex => {
-            val levelIndex = levelWithIndex._2
-            val node       = nodeWithIndex._1 
-            val nodeIndex = nodeWithIndex._2 
-            node.fGraph.render( levelIndex +"_"+ nodeIndex, "images/", renderEngine)
-                    
-        }))
-
-
+        dgTree.renderTree(renderEngine)
+        queryGraphsMapRDD.values.zipWithIndex.foreach(gi => gi._1.render("Query_"+gi._2, "images/", renderEngine))
 
         // Initialize a query processor to process supergraph search queries
-        //val processor = new QueryProcessor(dgTree.levels, dataGraphsMapRDD)
+        val processor = new QueryProcessor(dgTree.levels, dataGraphsMapRDD)
+        processor.superGraphSearch(queryGraphsMapRDD)
 
-        //processor.superGraphSearch(queryGraphsMapRDD)
-
-        //loading and verification of save data
-       // val levelCount = dgTree.levels.size
-        //val levels = loadDGTreeFromFile(savePath,levelCount)
+        // loading and verification of save data
+        // val levelCount = dgTree.levels.size
+        //val levels = dgTree.loadDGTreeFromFile(sc, savePath,levelCount)
         sc.stop()
     }
 }

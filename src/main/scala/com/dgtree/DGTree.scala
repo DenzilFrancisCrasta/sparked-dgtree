@@ -1,5 +1,6 @@
 package com.dgtree;
 
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import scala.collection.mutable.{ArrayBuffer, PriorityQueue}
 import org.apache.spark.storage.StorageLevel
@@ -80,7 +81,7 @@ class DGTree(
         val sievedFirstLevel = sieveChildren(firstLevelNodesRDD.join(toCover))
         sievedFirstLevel.persist(StorageLevel.MEMORY_AND_DISK)
 
-        println("First level count " + sievedFirstLevel.count)
+        println("Bootstrapped First Level RDD Node Count " + sievedFirstLevel.count)
         levels.append(sievedFirstLevel)
 
     }
@@ -253,9 +254,6 @@ class DGTree(
 
             val newNode = new DGTreeNode(parentId, fGraph, growEdge, edgeType, sSet, sStarSet, null, finalScore, matchesSize)
 
-           // if (matches.size == 1) 
-            //   println("MATCHES SIZE 1 " + newNode)
-
             (newNode, matches)
         })
 
@@ -378,9 +376,7 @@ class DGTree(
         // if all nodes in the last level are leaf nodes then stop
         while ( ! lastLevelRDD.isEmpty ) {
 
-            print("Generating Level :" + levels.size)
-            print("Leaves: [" + (levels(levels.size-1).count - lastLevelRDD.count) +"]")
-            print("Non Leaves [" + lastLevelRDD.count +"]")
+            print("Level #" + levels.size)
 
             // generate candidate children and the matches 
             val candidatesAndMatches = candidateFeatures(lastLevelRDD)
@@ -453,15 +449,55 @@ class DGTree(
             levels(levels.size - 2).unpersist()
             levels(levels.size - 2) = penultimaLevelRDD
 
-            println(" Sieved Nodes" + finalChildrenRDD.count)
             
             lastLevelRDD = levels(levels.size -1).filter(node => node.SStar.size > 1 && node.growEdge != null)
 
+            print(" Leaves [ " + (levels(levels.size-1).count - lastLevelRDD.count) +" ]")
+            print(" Non Leaves [ " + lastLevelRDD.count +" ]")
+            println(" => Sieved-Nodes [ " + finalChildrenRDD.count+ " ]")
+
        }
-       
 
     }
 
+
+    /* renders the feature graphs of all nodes in the chosen levels
+     * 
+     * @param renderEngine redering engine to be used by graphviz
+     * @param takeLevels the number of levels to be rendered
+     */
+    def renderTree(renderEngine: String, takeLevels: Int = 0) = {
+
+        val levelCount = if (takeLevels > 0) takeLevels else levels.size
+
+        levels.take(levelCount).zipWithIndex.foreach(levelWithIndex => levelWithIndex._1.zipWithIndex.foreach(nodeWithIndex => {
+            val levelIndex = levelWithIndex._2
+            val node       = nodeWithIndex._1 
+            val nodeIndex = nodeWithIndex._2 
+            node.fGraph.render( levelIndex +"_"+ nodeIndex, "images/", renderEngine)
+                    
+        }))
+    
+    }
+
+
+    def loadDGTreeFromFile(
+            sc : SparkContext,
+            savePath : String, 
+            levelCount : Int
+            ) : ArrayBuffer[RDD[DGTreeNode]]  = {
+
+        val levels = new ArrayBuffer[RDD[DGTreeNode]]()
+        for(i <- 0 to levelCount-1) {
+            levels += sc.objectFile[DGTreeNode](savePath+"/level_"+i)
+        }
+        var i = 0
+        levels.foreach(nodeRDD =>  {
+              println("level_"+i+":  "+nodeRDD.count()+" nodes")
+              println("First Node : "+nodeRDD.take(1)(0).fGraph)
+              i+=1
+        })
+        levels
+    }
+    
 }
-
-
