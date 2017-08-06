@@ -51,6 +51,9 @@ object DGTreeApp {
         val savePath   = args(1)
         val queryGraphFile = args(2)
 
+        val renderEngine = if (args.size > 3) args(3) else "dot" 
+
+
         // Generate RDD of string representations of data-graphs 
         val textFormatConf = new Configuration()
         textFormatConf.set("textinputformat.record.delimiter", GRAPH_DELIMITTER)
@@ -79,12 +82,20 @@ object DGTreeApp {
                                               .persist(StorageLevel.MEMORY_AND_DISK)
         //println(dataGraphsMapRDD.count())
 
+        queryGraphsMapRDD.values.zipWithIndex.foreach(gi => gi._1.render("Query_"+gi._2, "images/", renderEngine))
+
         // bootstrap the tree index 
         val dgTree = new DGTree(dataGraphsMapRDD)
         dgTree.treeGrow()
         //dgTree.saveDGTreetoFile(savePath)
 
-        //dgTree.levels.take(2).foreach(_.foreach(_.
+        dgTree.levels.take(4).zipWithIndex.foreach(levelWithIndex => levelWithIndex._1.zipWithIndex.foreach(nodeWithIndex => {
+            val levelIndex = levelWithIndex._2
+            val node       = nodeWithIndex._1 
+            val nodeIndex = nodeWithIndex._2 
+            node.fGraph.render( levelIndex +"_"+ nodeIndex, "images/", renderEngine)
+                    
+        }))
 
 
 

@@ -62,20 +62,20 @@ class Graph(val id: Int,
     }
 
     /** renders the graph using graphviz library */
-    def render(filename: String, directory: String)  = { 
+    def render(filename: String, directory: String, renderEngine: String)  = { 
         val gv = new com.liangdp.graphviz4s.Graph()
         var k = 0 
         for ( v <- vertexLabels) {
-            gv.node(k.toString(),label=v,attrs=Map("shape"->"plaintext"))
+            gv.node(k.toString(),label=v,attrs=Map("shape"->"circle"))
                 k = k+1 
         }   
 
         for ( i <- 0 to adjacencyList.length-1) {
             for ( e <- adjacencyList(i) )  {
                 if( e._1 > i) {
-                    val col = new StringBuilder("\"black")
+                    val col = new StringBuilder("\"red")
                         for (_ <- 2 to e._2 ) { 
-                            col.append(":white:black")
+                            col.append(":white:red")
                         }
                     col.append("\"")
                         gv.edge(i.toString(),e._1.toString(),attrs=Map("color"->col.toString()))
@@ -83,7 +83,7 @@ class Graph(val id: Int,
             }
         }   
         println(gv.source())
-        gv.render(engine="neato", format="png", fileName=filename, directory = directory)
+        gv.render(engine=renderEngine, format="png", fileName=filename, directory = directory)
     }   
 
 }
