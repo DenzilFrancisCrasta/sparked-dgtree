@@ -89,7 +89,7 @@ object DGTreeApp {
         dgTree.treeGrow()
         //dgTree.saveDGTreetoFile(savePath)
 
-        dgTree.levels.take(4).zipWithIndex.foreach(levelWithIndex => levelWithIndex._1.zipWithIndex.foreach(nodeWithIndex => {
+        dgTree.levels.zipWithIndex.foreach(levelWithIndex => levelWithIndex._1.zipWithIndex.foreach(nodeWithIndex => {
             val levelIndex = levelWithIndex._2
             val node       = nodeWithIndex._1 
             val nodeIndex = nodeWithIndex._2 
@@ -100,9 +100,9 @@ object DGTreeApp {
 
 
         // Initialize a query processor to process supergraph search queries
-        val processor = new QueryProcessor(dgTree.levels, dataGraphsMapRDD)
+        //val processor = new QueryProcessor(dgTree.levels, dataGraphsMapRDD)
 
-        processor.superGraphSearch(queryGraphsMapRDD)
+        //processor.superGraphSearch(queryGraphsMapRDD)
 
         //loading and verification of save data
        // val levelCount = dgTree.levels.size

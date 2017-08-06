@@ -379,8 +379,8 @@ class DGTree(
         while ( ! lastLevelRDD.isEmpty ) {
 
             print("Generating Level :" + levels.size)
-            println("leaf nodes :" + (levels(levels.size-1).count - lastLevelRDD.count))
-            print(" non leaf nodes " + lastLevelRDD.count)
+            print("Leaves: [" + (levels(levels.size-1).count - lastLevelRDD.count) +"]")
+            print("Non Leaves [" + lastLevelRDD.count +"]")
 
             // generate candidate children and the matches 
             val candidatesAndMatches = candidateFeatures(lastLevelRDD)
@@ -453,7 +453,7 @@ class DGTree(
             levels(levels.size - 2).unpersist()
             levels(levels.size - 2) = penultimaLevelRDD
 
-            println(" sieved children count " + finalChildrenRDD.count)
+            println(" Sieved Nodes" + finalChildrenRDD.count)
             
             lastLevelRDD = levels(levels.size -1).filter(node => node.SStar.size > 1 && node.growEdge != null)
 
