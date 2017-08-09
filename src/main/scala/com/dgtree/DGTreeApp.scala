@@ -66,7 +66,9 @@ object DGTreeApp {
                                               .filter(_.id != INVALID_GRAPH_ID)
                                               .map(g => (g.id, g))
                                               .persist(StorageLevel.MEMORY_AND_DISK)
-        //println(dataGraphsMapRDD.count())
+
+
+        println("Graph Database Size " + dataGraphsMapRDD.count())
 
 
         // Build the DGTree Index 

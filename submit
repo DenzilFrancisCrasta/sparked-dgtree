@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DATASET_FILE=datasets/paper_dataset.txt
+DATASET_FILE=datasets/1000dataset.txt
 QUERY_FILE=datasets/queries/paper_query.txt
 SAVE_PATH=/tmp
 RENDER_ENGINE=dot
@@ -20,5 +20,5 @@ time spark-submit --master local[8] \
                   $DATASET_FILE \
                   $SAVE_PATH \
                   $QUERY_FILE \
-                  $RENDER_ENGINE
-
+                  $RENDER_ENGINE \
+                  2> /dev/null
